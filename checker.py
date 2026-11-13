@@ -1010,7 +1010,7 @@ class BulkLiveDashboard:
 
         E   = '\x1b'
         # Like the taji reference: neutral structure, color only on the data.
-        AM  = E + '[1;96m'   # bold bright cyan — section titles
+        AM  = E + '[1;97m'   # bold white — titles / brand / section headers
         CY  = E + '[96m'     # cyan — small accents (ETA, tags, Lv)
         GN  = E + '[92m'     # green — valid / clean
         RD  = E + '[91m'     # red — invalid
@@ -1018,11 +1018,10 @@ class BulkLiveDashboard:
         TL  = E + '[94m'     # blue — CODM
         PK  = E + '[95m'     # magenta — no CODM
         WH  = E + '[97m'     # white — text
-        MU  = E + '[38;5;245m'  # grey50 — muted labels
         DIM = E + '[2m'
         OR  = E + '[96m'     # cyan — level bars
-        BRD = E + '[1;96m'   # bright cyan — frame (vivid, like titocod)
-        BRDd= E + '[2m'      # dim — inner dividers / bar tracks
+        BRD = E + '[96m'     # bright cyan — frame
+        BRDd= E + '[90m'     # gray — inner lines / bar tracks
         RST = E + '[0m'
 
         def _fmt(secs):
@@ -1037,7 +1036,7 @@ class BulkLiveDashboard:
         _tw = shutil.get_terminal_size((84, 24)).columns
         W   = max(min(_tw - 2, 120), 60)
         V   = BulkLiveDashboard._vlen
-        H   = '═'
+        H   = '─'
         HH  = '━'
         IW  = W - 2
 
@@ -1077,20 +1076,20 @@ class BulkLiveDashboard:
             vl = V(content)
             if vl > IW:
                 t, tv = _trunc(content, IW)
-                return f'{BRD}║{RST}' + t + ' ' * max(IW - tv, 0) + f'{BRD}║{RST}'
-            return f'{BRD}║{RST}' + _pad(content, IW) + f'{BRD}║{RST}'
+                return f'{BRD}│{RST}' + t + ' ' * max(IW - tv, 0) + f'{BRD}│{RST}'
+            return f'{BRD}│{RST}' + _pad(content, IW) + f'{BRD}│{RST}'
 
         def _pct(n, d):
             return f'({n/d*100:.1f}%)' if d else '(0.0%)'
 
         # ═══ OUTER BORDER + HEADER + STAT TABLE (one connected box) ═══
-        top_border = f'{BRD}╔{H * IW}╗{RST}'
-        bot_border = f'{BRD}╚{H * IW}╝{RST}'
+        top_border = f'{BRD}╭{H * IW}╮{RST}'
+        bot_border = f'{BRD}╰{H * IW}╯{RST}'
 
         hdr_l = f' {YL}◆{RST} {YL}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
         hdr_r = f'{GN}●{RST} {GN}ACTIVE{RST}  {DIM}·{RST}  {WH}{clock}{RST} '
         hdr_gap = max(IW - V(hdr_l) - V(hdr_r), 1)
-        hdr_row = f'{BRD}║{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}║{RST}'
+        hdr_row = f'{BRD}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}│{RST}'
 
         # Stat table — separate thick box inside outer border
         ncols = 5
@@ -1173,28 +1172,21 @@ class BulkLiveDashboard:
         ip_val = 'CLEAR' if ip_ok else 'BLOCKED'
         ip_col = GN if ip_ok else RD
 
-        base = done or 1
-        vb   = valid or 1
-        def _arow(icon, label, cnt, frac, c, pctstr):
-            lbl = _pad(f'{icon} {label}', 11)
-            return f'  {c}{lbl}{RST} {c}{cnt:>6,}{RST} {_bar(frac, 8, c)} {c}{pctstr}{RST}'
-        def _srow(icon, label, value, vcol):
-            return f'   {CY}{icon}{RST} {MU}{_pad(label, 9)}{RST}  {vcol}{value}{RST}'
         sec1 = [
             _lr(f' {CY}│{RST} {WH}ACCOUNT RESULTS{RST}',
                 f' {CY}│{RST} {WH}SYSTEM{RST}'),
-            _lr(_arow('▸', 'Valid',     valid,      valid/base,      GN, vp),
-                _srow('◇', 'Threads',   thr_val,                     WH)),
-            _lr(_arow('▸', 'Invalid',   invalid,    invalid/base,    RD, ip_s),
-                _srow('●', 'IP Status', ip_val,                      ip_col)),
-            _lr(_arow('◆', 'Clean',     clean,      clean/vb,        GN, cp),
-                _srow('▸', 'Speed',     f'{rate:.1f}/s',             WH)),
-            _lr(_arow('◇', 'Not Clean', nc,         nc/vb,           YL, np_s),
-                _srow('◆', 'CPM',       f'{cpm:.0f}',                WH)),
-            _lr(_arow('●', 'CODM',      codm_count, codm_count/vb,   TL, dp),
-                _srow('◇', 'Elapsed',   elapsed_str,                 WH)),
-            _lr(_arow('○', 'No CODM',   no_codm,    no_codm/vb,      PK, ndp),
-                _srow('○', 'ETA',       eta_str,                     CY)),
+            _lr(f'   {GN}▸{RST} {WH}Valid{RST}        {GN}{valid:>8,}{RST}  {GN}{vp}{RST}',
+                f'   {CY}◇{RST} {CY}Threads{RST}     {WH}{thr_val}{RST}'),
+            _lr(f'   {RD}▸{RST} {WH}Invalid{RST}      {RD}{invalid:>8,}{RST}  {RD}{ip_s}{RST}',
+                f'   {CY}●{RST} {CY}IP Status{RST}   {ip_col}{ip_val}{RST}'),
+            _lr(f'   {GN}◆{RST} {WH}Clean{RST}        {GN}{clean:>8,}{RST}  {GN}{cp}{RST}',
+                f'   {CY}▸{RST} {CY}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
+            _lr(f'   {YL}◇{RST} {WH}Not Clean{RST}    {YL}{nc:>8,}{RST}  {YL}{np_s}{RST}',
+                f'   {CY}◆{RST} {CY}CPM{RST}         {WH}{cpm:.0f}{RST}'),
+            _lr(f'   {TL}●{RST} {WH}CODM{RST}         {TL}{codm_count:>8,}{RST}  {TL}{dp}{RST}',
+                f'   {CY}◇{RST} {CY}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
+            _lr(f'   {PK}○{RST} {WH}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {PK}{ndp}{RST}',
+                f'   {CY}○{RST} {CY}ETA{RST}         {CY}{eta_str}{RST}'),
         ]
 
         # ═══ SECTION 2: LEVELS & PEAKS | LIVE FEED ═══
@@ -5053,86 +5045,50 @@ def proxy_diagnostic():
 
 
 def display_main_menu():
-    cols  = shutil.get_terminal_size((80, 20)).columns
-    width = min(max(cols - 6, 54), 72)
+    R    = '\033[0m'
+    GOLD = '\033[96m'    # cyan     — CHECKER
+    TEAL = '\033[92m'    # green    — TOOLS
+    PINK = '\033[95m'   # purple   — GENERATORS
+    W    = '\033[1;97m'
+    DM   = '\033[2m'
 
-    def _gb(s):
-        return _grad_str(s, 160, 0, 255, 255, 80, 200)
-    L_bar = _grad_str('│', 160, 0, 255, 160, 0, 255)
-    R_bar = _grad_str('│', 255, 80, 200, 255, 80, 200)
+    tw = _tw()
+    w  = min(tw - 4, 76)
+    sep = f'  \033[90m{"─" * w}{R}'
 
-    def top_bar():    return f"  {_gb('╭' + '─' * (width + 2) + '╮')}"
-    def bottom_bar(): return f"  {_gb('╰' + '─' * (width + 2) + '╯')}"
-    def divider():    return f"  {_gb('├' + '─' * (width + 2) + '┤')}"
-    def row(content):
-        pad = width - _visible_len(content)
-        return f"  {L_bar} {content}{' ' * max(pad, 0)} {R_bar}"
+    def _sec(title, c):
+        print(f'  {c}│{R} {c}{title}{R}')
 
-    _opt_grads = [
-        (  0, 220, 255, 100,   0, 255),
-        (180,   0, 255, 255,  60, 200),
-        (255, 180,   0, 255, 100,   0),
-        (  0, 255, 180, 100, 255,  80),
-        (255, 200,   0, 255, 140,   0),
-        (100, 255, 200,   0, 180, 255),
-    ]
+    def _item(n, label, desc, c):
+        print(f'    {c}▸{R} {W}{n:>2}{R}  {W}{label:<18s}{R}  {DM}{desc}{R}')
 
-    def option(key, idx, label, desc):
-        g = _opt_grads[idx % len(_opt_grads)]
-        key_part   = f"\033[2m[\033[0m{_BRT}{_WH}{key:>2}\033[0m\033[2m]\033[0m"
-        label_part = f"  {_grad_str(label, *g)}\033[0m"
-        desc_part  = f"  {_SL}{_ITL}{desc}\033[0m"
-        return row(f"{key_part}{label_part}{desc_part}")
+    print()
+    _sec('CHECKER', GOLD)
+    _item(1,  'Full Info',       'Complete account details',        GOLD)
+    _item(2,  'Semi Info',       'Level · Clean · Shell · Country',  GOLD)
+    _item(3,  'No Info',         'Fastest — Valid / Invalid only',   GOLD)
+    _item(4,  'Single Check',    'One account, full output',         GOLD)
+    print()
+    _sec('TOOLS', TEAL)
+    _item(5,  'Log Separator',   'Separates logs by domain',         TEAL)
+    _item(6,  'File Splitter',   'Split lines into multiple files',  TEAL)
+    _item(7,  'File Merger',     'Merge multiple files into one',    TEAL)
+    _item(8,  'Watermark Detect','Detects if logs are leaked',       TEAL)
+    _item(9,  'Encryption',      'Encrypt your code',                TEAL)
+    print()
+    _sec('GENERATORS', PINK)
+    _item(10, 'CN31 Generator',  'Fresh cn31 for ML Checker',        PINK)
+    _item(11, 'CODM Generator',  'Valid lines for CODM',             PINK)
+    _item(12, 'MLBB Generator',  'Valid lines for MLBB',             PINK)
+    print()
+    print(sep)
+    print(f'  {GOLD}◆{R} {GOLD}@dvlist{R}')
+    print()
 
-    def section(name):
-        return row(f"{_BRT}{_gb(name)}\033[0m")
-
-    icon  = _grad_str('◆', 160, 0, 255, 255, 80, 200)
-    title = _gb('SELECT MODE') + '\033[0m'
-
-    groups = [
-        ('CHECKER', [
-            ('1',  'Full Info     ', 'Complete account details'),
-            ('2',  'Semi Info     ', 'Level · Clean · Shell · Country'),
-            ('3',  'No Info       ', 'Fastest — Valid / Invalid only'),
-            ('4',  'Single Check  ', 'One account, full output'),
-        ]),
-        ('TOOLS', [
-            ('5',  'Log Separator ', 'Separates logs by domain'),
-            ('6',  'File Splitter ', 'Split lines into multiple files'),
-            ('7',  'File Merger   ', 'Merge multiple files into one'),
-            ('8',  'Watermark Det ', 'Detects if logs are leaked'),
-            ('9',  'Encryption    ', 'Encrypt your code'),
-        ]),
-        ('GENERATORS', [
-            ('10', 'CN31 Generator', 'Fresh cn31 for ML Checker'),
-            ('11', 'CODM Generator', 'Valid lines for CODM'),
-            ('12', 'MLBB Generator', 'Valid lines for MLBB'),
-        ]),
-    ]
-
-    lines = ["", top_bar(), row(f"  {icon}  {title}"), divider()]
-    oi = 0
-    for si, (secname, opts) in enumerate(groups):
-        if si > 0:
-            lines.append(divider())
-        lines.append(section(secname))
-        for key, label, desc in opts:
-            lines.append(option(key, oi, label, desc))
-            oi += 1
-    hint = f"{_SL}type a number  then  ↵  enter\033[0m"
-    hpad = width - _visible_len(hint)
-    footer = f"  {L_bar} {' ' * (hpad // 2)}{hint}{' ' * (hpad - hpad // 2)} {R_bar}"
-    lines += [divider(), footer, bottom_bar(), ""]
-
-    for line in lines:
-        print(line)
-
-    prompt_arrow = _grad_str('❯', 160, 0, 255, 255, 80, 200)
     while True:
         try:
-            choice = input(f"  {prompt_arrow}\033[0m  ").strip()
-            if choice in [str(i) for i in range(1, 13)]:
+            choice = input(f'  {TEAL}▸{R} Select [1-12]: ').strip()
+            if choice in ('1','2','3','4','5','6','7','8','9','10','11','12'):
                 return choice
             _log('ERROR', 'Enter 1-12.', '    ')
         except KeyboardInterrupt:
@@ -5146,9 +5102,9 @@ def display_banner():
     clear_screen()
     tw = _tw()
     R  = '\033[0m'
-    AM = '\033[38;2;200;80;255m'  # purple
-    CY = '\033[96m'               # cyan accent
-    PK = '\033[38;2;255;80;200m'  # pink
+    AM = '\033[1;97m'  # white
+    CY = '\033[96m'    # cyan accent
+    PK = '\033[95m'    # magenta accent
     DM = '\033[2m'
     W  = '\033[1;97m'
 
@@ -5161,14 +5117,14 @@ def display_banner():
         r" ╚═╝  ╚═╝ ╚══════╝ ╚══════╝  ╚═════╝",
     ]
 
-    # purple → pink gradient (matches the menu theme)
+    # neutral light-gray banner (not themed)
     row_colors = [
-        (160,   0, 255,  255,  80, 200),
-        (140,   0, 255,  255,  60, 220),
-        (120,  20, 255,  240,  40, 255),
-        ( 90,  50, 255,  210,  30, 245),
-        ( 60,  90, 255,  185,  20, 255),
-        ( 40, 120, 255,  160,   0, 255),
+        (235, 237, 242,  225, 228, 235),
+        (220, 223, 230,  210, 214, 222),
+        (205, 209, 218,  198, 202, 212),
+        (192, 196, 207,  186, 190, 202),
+        (182, 186, 198,  178, 182, 195),
+        (176, 180, 193,  176, 180, 193),
     ]
 
     def _center(s, vis_len):
