@@ -103,7 +103,7 @@ def _grad_str(text, r1=180, g1=0, b1=255, r2=255, g2=80, b2=200):
     n = max(len(text) - 1, 1)
     return ''.join(_grad_char(ch, r1, g1, b1, r2, g2, b2, i / n) for i, ch in enumerate(text))
 
-_GRAD_VER = '\033[38;2;255;215;80m'   # warm gold (version)
+_GRAD_VER = '\033[38;2;45;212;191m'   # warm gold (version)
 _GRAD_BY  = '\033[38;2;160;160;170m' # soft gray (by)
 _GRAD_AT  = '\033[38;2;255;45;149m'  # hot magenta (brand)
 
@@ -130,14 +130,14 @@ _SL  = "\033[38;5;245m"
 _GR  = "\033[38;5;117m"
 _GD  = "\033[38;5;222m"
 # Rich style strings (new theme: cyan primary, magenta brand)
-P  = 'bold #ffd750'
-S  = 'bold #ffaa00'
+P  = 'bold #2dd4bf'
+S  = 'bold #22d3ee'
 OK = 'bold bright_green'
 ER = 'bold bright_red'
 WN = 'bold yellow'
 MU = 'dim'
 TX = 'bright_white'
-BL = '#ffd750'
+BL = '#2dd4bf'
 
 def _tw():
     return _shutil_ui.get_terminal_size((80, 24)).columns
@@ -481,8 +481,8 @@ class AccountFileViewer:
 
     def display_file_table(self, file_infos):
         print()
-        table = Table(box=box.SIMPLE_HEAD, header_style="bold #ffaa00", border_style="dim", padding=(0, 2))
-        table.add_column("#", style="bold #ffaa00", justify="right", width=3)
+        table = Table(box=box.SIMPLE_HEAD, header_style="bold #22d3ee", border_style="dim", padding=(0, 2))
+        table.add_column("#", style="bold #22d3ee", justify="right", width=3)
         table.add_column("Filename", style="bold white")
         table.add_column("Size", style="dim", justify="right")
         table.add_column("Accounts", style="bright_white", justify="right")
@@ -491,14 +491,14 @@ class AccountFileViewer:
         for idx, info in enumerate(file_infos, 1):
             bar_w = 16
             filled = int(info['account_count'] / max_ac * bar_w)
-            bar = f"[#ffaa00]{'█' * filled}[/#ffaa00][dim]{'░' * (bar_w - filled)}[/dim]"
+            bar = f"[#22d3ee]{'█' * filled}[/#22d3ee][dim]{'░' * (bar_w - filled)}[/dim]"
             table.add_row(str(idx), info['name'], info['size_str'], f"{info['account_count']:,}", bar)
         self.console.print(table)
         print()
 
     def prompt_file_selection(self, file_infos):
         while True:
-            choice = input(f"  \033[38;2;255;170;0m>\033[0m file # or 'auto': ").strip().lower()
+            choice = input(f"  \033[38;2;34;211;238m>\033[0m file # or 'auto': ").strip().lower()
             if choice == 'auto':
                 largest = max(file_infos, key=lambda x: x['account_count'])
                 _log('SUCCESS', f"Auto-selected: {largest['name']}")
@@ -513,15 +513,15 @@ class AccountFileViewer:
 
     def prompt_clean_file(self):
         print()
-        choice = input(f"  \033[38;2;255;170;0m>\033[0m clean file encoding? (Y/n): ").strip().lower()
+        choice = input(f"  \033[38;2;34;211;238m>\033[0m clean file encoding? (Y/n): ").strip().lower()
         return choice != 'n'
 
     def prompt_remove_duplicates(self):
-        choice = input(f"  \033[38;2;255;170;0m>\033[0m remove duplicates? (y/N): ").strip().lower()
+        choice = input(f"  \033[38;2;34;211;238m>\033[0m remove duplicates? (y/N): ").strip().lower()
         return choice == 'y'
 
     def prompt_auto_remove_checked(self):
-        choice = input(f"  \033[38;2;255;170;0m>\033[0m auto-remove checked? (y/N): ").strip().lower()
+        choice = input(f"  \033[38;2;34;211;238m>\033[0m auto-remove checked? (y/N): ").strip().lower()
         return choice == 'y'
 
 class LiveStats:
@@ -633,7 +633,7 @@ class LiveStats:
         pct = processed / self.total_accounts * 100 if self.total_accounts > 0 else 0
         bar_w = 30
         filled = int(pct / 100 * bar_w)
-        prog_bar = f"[#ffd750]{'█' * filled}[/#ffd750][dim]{'░' * (bar_w - filled)}[/dim]"
+        prog_bar = f"[#2dd4bf]{'█' * filled}[/#2dd4bf][dim]{'░' * (bar_w - filled)}[/dim]"
 
         def _mb(count, total, color, w=12):
             if total == 0:
@@ -645,14 +645,14 @@ class LiveStats:
         tbl.add_column(style='dim', min_width=6, no_wrap=True)
         tbl.add_column(style='bright_white', min_width=8, no_wrap=True, justify='right')
         tbl.add_column(style='dim', min_width=14, no_wrap=True)
-        tbl.add_row(f'[#ffd750]{prog_bar}[/#ffd750]', f'[bold bright_yellow]{pct:.1f}%[/bold bright_yellow]', f'[dim]{processed}/{self.total_accounts}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60)}s[/dim]')
+        tbl.add_row(f'[#2dd4bf]{prog_bar}[/#2dd4bf]', f'[bold bright_yellow]{pct:.1f}%[/bold bright_yellow]', f'[dim]{processed}/{self.total_accounts}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60)}s[/dim]')
         tbl.add_row('', '', '')
         total_c = stats['valid'] + stats['invalid']
-        tbl.add_row(f'[bright_green]✔ Valid[/bright_green]', f"[bright_green]{stats['valid']}[/bright_green]", _mb(stats['valid'], total_c, '#ffaa00'))
+        tbl.add_row(f'[bright_green]✔ Valid[/bright_green]', f"[bright_green]{stats['valid']}[/bright_green]", _mb(stats['valid'], total_c, '#22d3ee'))
         tbl.add_row(f'[bright_red]✖ Invalid[/bright_red]', f"[bright_red]{stats['invalid']}[/bright_red]", _mb(stats['invalid'], total_c, 'bright_red'))
-        tbl.add_row(f'[bright_green]✨ Clean[/bright_green]', f"[bright_green]{stats['clean']}[/bright_green]", _mb(stats['clean'], max(stats['valid'], 1), '#ffaa00'))
+        tbl.add_row(f'[bright_green]✨ Clean[/bright_green]', f"[bright_green]{stats['clean']}[/bright_green]", _mb(stats['clean'], max(stats['valid'], 1), '#22d3ee'))
         tbl.add_row(f'[yellow]⊘ Not Clean[/yellow]', f"[yellow]{stats['not_clean']}[/yellow]", _mb(stats['not_clean'], max(stats['valid'], 1), 'yellow'))
-        tbl.add_row(f'[#ffd750]◈ CODM[/#ffd750]', f"[#ffd750]{stats['has_codm']}[/#ffd750]", _mb(stats['has_codm'], max(stats['valid'], 1), '#ffaa00'))
+        tbl.add_row(f'[#2dd4bf]◈ CODM[/#2dd4bf]', f"[#2dd4bf]{stats['has_codm']}[/#2dd4bf]", _mb(stats['has_codm'], max(stats['valid'], 1), '#22d3ee'))
         tbl.add_row(f'[dim]○ No CODM[/dim]', f"[dim]{stats['no_codm']}[/dim]", _mb(stats['no_codm'], max(stats['valid'], 1), 'magenta'))
         tbl.add_row('', '', '')
         tbl.add_row(f'[dim]▲ Top Clean Lv[/dim]', f"[bold bright_green]{stats['highest_clean_level']}[/bold bright_green]", '')
@@ -665,8 +665,8 @@ class LiveStats:
         if active_games:
             tbl.add_row('', '', '')
             for label, count in active_games:
-                tbl.add_row(f'[dim]{label}[/dim]', f'[bold #ffaa00]{count}[/bold #ffaa00]', '')
-        return Panel(tbl, title='[bold #ffaa00]◈ [/bold #ffaa00][bold #ffd750]Hesu[/bold #ffd750][bold #ffaa00] ◈[/bold #ffaa00]', border_style='#ffaa00', box=DOUBLE, padding=(0, 2))
+                tbl.add_row(f'[dim]{label}[/dim]', f'[bold #22d3ee]{count}[/bold #22d3ee]', '')
+        return Panel(tbl, title='[bold #22d3ee]◈ [/bold #22d3ee][bold #2dd4bf]Hesu[/bold #2dd4bf][bold #22d3ee] ◈[/bold #22d3ee]', border_style='#22d3ee', box=DOUBLE, padding=(0, 2))
 
     def display_final_stats(self):
         stats = self.get_stats()
@@ -676,7 +676,7 @@ class LiveStats:
         rate = proc / elapsed if elapsed > 0 else 0
         console = Console()
 
-        results_table = Table(title="[bold #ffaa00]◈ SESSION COMPLETE[/bold #ffaa00]", title_style="bold #ffaa00", box=DOUBLE, border_style="#ffaa00", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
+        results_table = Table(title="[bold #22d3ee]◈ SESSION COMPLETE[/bold #22d3ee]", title_style="bold #22d3ee", box=DOUBLE, border_style="#22d3ee", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
         results_table.add_column("Category", style="dim", no_wrap=True, width=14)
         results_table.add_column("Count", justify="right", style="bright_white", width=10)
         results_table.add_column("Pct", justify="right", style="bright_yellow", width=8)
@@ -688,10 +688,10 @@ class LiveStats:
         results_table.add_row("", "", "", "")
 
         vd = max(stats['valid'], 1)
-        for label, count, color in [("✨  Clean", stats['clean'], "bright_green"), ("⊘  Not Clean", stats['not_clean'], "bright_yellow"), ("◈  Has CODM", stats['has_codm'], "#ffd750"), ("○  No CODM", stats['no_codm'], "magenta")]:
+        for label, count, color in [("✨  Clean", stats['clean'], "bright_green"), ("⊘  Not Clean", stats['not_clean'], "bright_yellow"), ("◈  Has CODM", stats['has_codm'], "#2dd4bf"), ("○  No CODM", stats['no_codm'], "magenta")]:
             results_table.add_row(f"[{color}]{label}[/{color}]", f"[{color}]{count:,}[/{color}]", self._rich_pct(count, vd), self._rich_bar(count, vd, color, 20))
 
-        console.print(Panel(results_table, border_style="#ffaa00", box=HEAVY, padding=(0, 1)))
+        console.print(Panel(results_table, border_style="#22d3ee", box=HEAVY, padding=(0, 1)))
 
         stats_table = Table(title="[bold bright_yellow]◈ SESSION STATS[/bold bright_yellow]", box=ROUNDED, border_style="bright_yellow", show_header=False, padding=(0, 2), expand=False)
         stats_table.add_column(style="dim", width=16, no_wrap=True)
@@ -705,7 +705,7 @@ class LiveStats:
         for label, val in [("⏱  Time", f"{int(elapsed // 60)}m {int(elapsed % 60)}s"), ("⚡  Rate", f"{rate:.2f} acc/s"), ("◈  Processed", f"{proc:,}/{total:,}"), ("▲  Top Clean", f"[{clean_lvl_style}]{stats['highest_clean_level']}[/{clean_lvl_style}]"), ("▲  Top Not Clean", f"[{not_clean_lvl_style}]{self.highest_not_clean_level}[/{not_clean_lvl_style}]"), ("◆  Peak Shell", f"[{hs_style}]{hs:,}[/{hs_style}]")]:
             stats_table.add_row(label, val)
 
-        level_table = Table(title="[bold #ffd750]◈ LEVEL RANGES[/bold #ffd750]", box=ROUNDED, border_style="#ffd750", show_header=True, header_style="bold dim", padding=(0, 1), expand=False)
+        level_table = Table(title="[bold #2dd4bf]◈ LEVEL RANGES[/bold #2dd4bf]", box=ROUNDED, border_style="#2dd4bf", show_header=True, header_style="bold dim", padding=(0, 1), expand=False)
         level_table.add_column("Range", style="dim", no_wrap=True, width=10)
         level_table.add_column("Clean", justify="right", style="bright_green", width=8)
         level_table.add_column("Bar", no_wrap=True)
@@ -729,18 +729,18 @@ class LiveStats:
         active_games = [(label, gc.get(key, 0)) for key, label in GAME_DISPLAY_NAMES if gc.get(key, 0) > 0]
 
         if active_games:
-            games_table = Table(title="[bold #ffaa00]◈ GAMES FOUND[/bold #ffaa00]", box=ROUNDED, border_style="#ffaa00", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
+            games_table = Table(title="[bold #22d3ee]◈ GAMES FOUND[/bold #22d3ee]", box=ROUNDED, border_style="#22d3ee", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
             games_table.add_column("Game", style="dim", no_wrap=True, width=24)
             games_table.add_column("Count", justify="right", style="bright_white", width=8)
             games_table.add_column("Bar", no_wrap=True)
             peak = max(c for _, c in active_games) or 1
             for label, count in active_games:
-                games_table.add_row(f"[dim]{label}[/dim]", f"[#ffd750]{count:,}[/#ffd750]", self._rich_bar(count, peak, "#ffd750", 16))
-            console.print(Panel(games_table, border_style="#ffaa00", box=ROUNDED, padding=(0, 1)))
+                games_table.add_row(f"[dim]{label}[/dim]", f"[#2dd4bf]{count:,}[/#2dd4bf]", self._rich_bar(count, peak, "#2dd4bf", 16))
+            console.print(Panel(games_table, border_style="#22d3ee", box=ROUNDED, padding=(0, 1)))
 
         footer_text = Text()
-        footer_text.append("◈  Powered by @dvlist", style="bold #ffd750")
-        console.print(Panel(Align.center(footer_text), border_style="#ffd750", box=ROUNDED, padding=(0, 1)))
+        footer_text.append("◈  Powered by @dvlist", style="bold #2dd4bf")
+        console.print(Panel(Align.center(footer_text), border_style="#2dd4bf", box=ROUNDED, padding=(0, 1)))
         console.print()
 
 class BulkLiveDashboard:
@@ -934,7 +934,7 @@ class BulkLiveDashboard:
             if m == 'none':
                 line = f'  \033[1;92m✔ VALID\033[0m  \033[97m{account}\033[0m'
             else:  # semi
-                lc   = '\033[38;2;255;215;80m' if codm_level >= 200 else '\033[97m'
+                lc   = '\033[38;2;45;212;191m' if codm_level >= 200 else '\033[97m'
                 cs   = '\033[1;92mCLEAN\033[0m' if is_clean else '\033[1;93mNOT CLEAN\033[0m'
                 ss   = f'  \033[93mShell:{shell:,}\033[0m' if shell > 0 else ''
                 lvls = f'{lc}Lv{codm_level}\033[0m' if has_codm else '\033[2mNo CODM\033[0m'
@@ -1009,18 +1009,18 @@ class BulkLiveDashboard:
         top_hits = s.get('top_hits', [])
 
         E   = '\x1b'
-        AM  = E + '[38;2;255;215;80m'   # gold — titles / brand / frames
-        CY  = E + '[38;2;56;217;200m'   # teal — cool accent (ETA, tags)
+        AM  = E + '[38;2;34;211;238m'   # cyan — titles / brand
+        CY  = E + '[38;2;45;212;191m'   # teal — accent (ETA, tags, v-tag)
         GN  = E + '[38;2;74;222;128m'   # green — valid / clean
         RD  = E + '[38;2;255;93;108m'   # red — invalid
         YL  = E + '[38;2;255;214;61m'   # yellow — not clean
-        TL  = E + '[38;2;56;217;200m'   # teal — CODM / info
-        PK  = E + '[38;2;255;121;198m'  # pink — no CODM / accent
+        TL  = E + '[38;2;45;212;191m'   # teal — CODM / info
+        PK  = E + '[38;2;129;140;248m'  # periwinkle — no CODM / cool accent
         WH  = E + '[1;97m'
         DIM = E + '[2m'
-        OR  = E + '[38;2;255;176;32m'   # soft amber (sparingly)
-        BRD = E + '[38;2;196;164;76m'   # muted antique gold — frame (present, not loud)
-        BRDd= E + '[38;2;110;92;42m'    # deep dim gold — inner lines / bar tracks
+        OR  = E + '[38;2;56;189;248m'   # sky blue (level accent)
+        BRD = E + '[38;2;62;152;144m'   # muted teal — frame (present, not loud)
+        BRDd= E + '[38;2;43;90;84m'     # deep dim teal — inner lines / bar tracks
         RST = E + '[0m'
 
         def _fmt(secs):
@@ -2651,7 +2651,7 @@ def display_codm_info(account, password, details, codm_info, has_codm,
         return
 
     # ── Color shortcuts
-    CY  = '\x1b[38;2;255;215;80m'
+    CY  = '\x1b[38;2;45;212;191m'
     MG  = '\x1b[38;2;255;45;149m'
     GN  = '\x1b[1;92m'
     YL  = '\x1b[1;93m'
@@ -3431,7 +3431,7 @@ def validator_check():
     console.print(Panel(Text(f"Loaded {len(accounts):,} combos", style="bold bright_white"), border_style="bright_green", box=box.ROUNDED, expand=False))
     print()
     
-    console.print(Panel(Text("Select Thread Count", style="bold bright_white"), border_style="#ffd750", box=box.ROUNDED, expand=False))
+    console.print(Panel(Text("Select Thread Count", style="bold bright_white"), border_style="#2dd4bf", box=box.ROUNDED, expand=False))
     
     while True:
         try:
@@ -3513,8 +3513,8 @@ def validator_check():
         with print_lock:
             console.print()
             console.print(Panel(
-                f"[#ffd750]{'█' * filled}{'░' * (bar_w - filled)}[/#ffd750]  [bold bright_yellow]{pct:.1f}%[/bold bright_yellow]  [dim]{dn}/{total}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60):02d}s[/dim]",
-                border_style="#ffd750", box=box.ROUNDED, padding=(0, 1), expand=False
+                f"[#2dd4bf]{'█' * filled}{'░' * (bar_w - filled)}[/#2dd4bf]  [bold bright_yellow]{pct:.1f}%[/bold bright_yellow]  [dim]{dn}/{total}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60):02d}s[/dim]",
+                border_style="#2dd4bf", box=box.ROUNDED, padding=(0, 1), expand=False
             ))
             console.print()
 
@@ -3560,7 +3560,7 @@ def validator_check():
         if done_now % 5 == 0 or done_now == total:
             _print_live_stats()
     
-    console.print(Panel(Text(f"Output: {out_dir}", style="#ffd750"), border_style="#ffd750", box=box.ROUNDED, expand=False))
+    console.print(Panel(Text(f"Output: {out_dir}", style="#2dd4bf"), border_style="#2dd4bf", box=box.ROUNDED, expand=False))
     print()
     
     try:
@@ -3606,11 +3606,11 @@ def validator_check():
         Text(f"⏱  Time     {int(elapsed // 60)}m {int(elapsed % 60)}s\n", style="dim") +
         Text(f"⚡  Rate     {dn / elapsed:.2f} acc/s\n", style="dim") +
         Text(f"◈  Processed {dn:,}/{total:,}\n", style="dim") +
-        Text(f"✔  Valid    {valid_path}\n", style="#ffd750") +
-        Text(f"✖  Invalid  {invalid_path}\n", style="#ffd750") +
-        Text(f"·  Errors   {error_path}\n", style="#ffd750") +
-        Text("◈  Powered by @dvlist", style="bold #ffd750"),
-        border_style="#ffaa00", box=box.ROUNDED, expand=False
+        Text(f"✔  Valid    {valid_path}\n", style="#2dd4bf") +
+        Text(f"✖  Invalid  {invalid_path}\n", style="#2dd4bf") +
+        Text(f"·  Errors   {error_path}\n", style="#2dd4bf") +
+        Text("◈  Powered by @dvlist", style="bold #2dd4bf"),
+        border_style="#22d3ee", box=box.ROUNDED, expand=False
     )
     console.print(stats_panel)
     print()
@@ -3626,29 +3626,29 @@ def prompt_proxy_setup():
         console.print(Panel(
             Text(title, style="bold bright_white") if not subtitle
             else Text(title, style="bold bright_white") + Text(f"\n{subtitle}", style="dim"),
-            border_style="#ffaa00", box=box.ROUNDED, expand=False
+            border_style="#22d3ee", box=box.ROUNDED, expand=False
         ))
         print()
 
-    def _panel(content, border="#ffd750"):
+    def _panel(content, border="#2dd4bf"):
         console.print(Panel(content, border_style=border, box=box.ROUNDED, expand=False))
         print()
 
     def _ok(msg):   console.print(indent + f"[bold green]  ✔ {msg}[/bold green]")
     def _warn(msg): console.print(indent + f"[bold yellow]  ⚠ {msg}[/bold yellow]")
     def _err(msg):  console.print(indent + f"[bold red]  ✖ {msg}[/bold red]")
-    def _info(msg): console.print(indent + f"  [bold #ffd750]{msg}[/bold #ffd750]")
-    def _ask(prompt, color="bold #ffaa00"):
+    def _info(msg): console.print(indent + f"  [bold #2dd4bf]{msg}[/bold #2dd4bf]")
+    def _ask(prompt, color="bold #22d3ee"):
         return console.input(indent + f"[{color}]  ▸ {prompt}[/{color}]").strip()
 
     _header("PROXY CONFIGURATION", "Configure how requests are routed")
 
     mode_text = (
-        Text("  [1]  ", style="bold #ffaa00") + Text("Custom URL", style="bold white") +
+        Text("  [1]  ", style="bold #22d3ee") + Text("Custom URL", style="bold white") +
         Text("   – Single proxy, enter manually\n", style="dim") +
-        Text("  [2]  ", style="bold #ffaa00") + Text("Proxy File", style="bold white") +
+        Text("  [2]  ", style="bold #22d3ee") + Text("Proxy File", style="bold white") +
         Text("   – Load multiple proxies from a file\n", style="dim") +
-        Text("  [3]  ", style="bold #ffaa00") + Text("No Proxy  ", style="bold white") +
+        Text("  [3]  ", style="bold #22d3ee") + Text("No Proxy  ", style="bold white") +
         Text("   – Direct connection, no routing", style="dim")
     )
     _panel(mode_text)
@@ -3664,19 +3664,19 @@ def prompt_proxy_setup():
         fmt_text = (
             Text("Enter a proxy URL in any format.\n\n", style="bold bright_white") +
             Text("  Supported protocols:\n", style="dim") +
-            Text("  HTTP    ", style="bold #ffd750") + Text("– standard proxy, most compatible\n", style="dim") +
-            Text("  HTTPS   ", style="bold #ffd750") + Text("– encrypted tunnel to proxy server\n", style="dim") +
-            Text("  SOCKS5  ", style="bold #ffd750") + Text("– lower level, faster, supports UDP\n", style="dim") +
-            Text("  SOCKS4  ", style="bold #ffd750") + Text("– legacy, no auth, TCP only\n\n", style="dim") +
+            Text("  HTTP    ", style="bold #2dd4bf") + Text("– standard proxy, most compatible\n", style="dim") +
+            Text("  HTTPS   ", style="bold #2dd4bf") + Text("– encrypted tunnel to proxy server\n", style="dim") +
+            Text("  SOCKS5  ", style="bold #2dd4bf") + Text("– lower level, faster, supports UDP\n", style="dim") +
+            Text("  SOCKS4  ", style="bold #2dd4bf") + Text("– legacy, no auth, TCP only\n\n", style="dim") +
             Text("  Accepted formats:\n", style="dim") +
-            Text("  http://user:pass@host:port      ", style="#ffd750") + Text("← standard URL\n", style="dim") +
-            Text("  socks5://user:pass@host:port    ", style="#ffd750") + Text("← SOCKS5 with auth\n", style="dim") +
-            Text("  host:port:user:pass             ", style="#ffd750") + Text("← colon-separated\n", style="dim") +
-            Text("  user:pass@host:port             ", style="#ffd750") + Text("← auth prefix\n", style="dim") +
-            Text("  host:port                       ", style="#ffd750") + Text("← no auth\n\n", style="dim") +
-            Text("  No auth needed?  ", style="dim") + Text("Use host:port or http://host:port\n", style="#ffd750") +
-            Text("  Residential?     ", style="dim") + Text("Prefer SOCKS5 for better compatibility.\n", style="#ffd750") +
-            Text("  Datacenter?      ", style="dim") + Text("HTTP works fine for most cases.", style="#ffd750")
+            Text("  http://user:pass@host:port      ", style="#2dd4bf") + Text("← standard URL\n", style="dim") +
+            Text("  socks5://user:pass@host:port    ", style="#2dd4bf") + Text("← SOCKS5 with auth\n", style="dim") +
+            Text("  host:port:user:pass             ", style="#2dd4bf") + Text("← colon-separated\n", style="dim") +
+            Text("  user:pass@host:port             ", style="#2dd4bf") + Text("← auth prefix\n", style="dim") +
+            Text("  host:port                       ", style="#2dd4bf") + Text("← no auth\n\n", style="dim") +
+            Text("  No auth needed?  ", style="dim") + Text("Use host:port or http://host:port\n", style="#2dd4bf") +
+            Text("  Residential?     ", style="dim") + Text("Prefer SOCKS5 for better compatibility.\n", style="#2dd4bf") +
+            Text("  Datacenter?      ", style="dim") + Text("HTTP works fine for most cases.", style="#2dd4bf")
         )
         _panel(fmt_text)
 
@@ -3747,24 +3747,24 @@ def prompt_proxy_setup():
         file_text = (
             Text("Enter path to a proxy file (one proxy per line).\n\n", style="bold bright_white") +
             Text("  Supported protocols:\n", style="dim") +
-            Text("  HTTP    ", style="bold #ffd750") + Text("– standard proxy, most compatible\n", style="dim") +
-            Text("  HTTPS   ", style="bold #ffd750") + Text("– encrypted tunnel to proxy server\n", style="dim") +
-            Text("  SOCKS5  ", style="bold #ffd750") + Text("– lower level, faster, supports UDP\n", style="dim") +
-            Text("  SOCKS4  ", style="bold #ffd750") + Text("– legacy, no auth, TCP only\n\n", style="dim") +
+            Text("  HTTP    ", style="bold #2dd4bf") + Text("– standard proxy, most compatible\n", style="dim") +
+            Text("  HTTPS   ", style="bold #2dd4bf") + Text("– encrypted tunnel to proxy server\n", style="dim") +
+            Text("  SOCKS5  ", style="bold #2dd4bf") + Text("– lower level, faster, supports UDP\n", style="dim") +
+            Text("  SOCKS4  ", style="bold #2dd4bf") + Text("– legacy, no auth, TCP only\n\n", style="dim") +
             Text("  Accepted formats:\n", style="dim") +
-            Text("  http://user:pass@host:port      ", style="#ffd750") + Text("← standard URL\n", style="dim") +
-            Text("  socks5://user:pass@host:port    ", style="#ffd750") + Text("← SOCKS5 with auth\n", style="dim") +
-            Text("  host:port:user:pass             ", style="#ffd750") + Text("← colon-separated\n", style="dim") +
-            Text("  user:pass@host:port             ", style="#ffd750") + Text("← auth prefix\n", style="dim") +
-            Text("  host:port                       ", style="#ffd750") + Text("← no auth\n\n", style="dim") +
+            Text("  http://user:pass@host:port      ", style="#2dd4bf") + Text("← standard URL\n", style="dim") +
+            Text("  socks5://user:pass@host:port    ", style="#2dd4bf") + Text("← SOCKS5 with auth\n", style="dim") +
+            Text("  host:port:user:pass             ", style="#2dd4bf") + Text("← colon-separated\n", style="dim") +
+            Text("  user:pass@host:port             ", style="#2dd4bf") + Text("← auth prefix\n", style="dim") +
+            Text("  host:port                       ", style="#2dd4bf") + Text("← no auth\n\n", style="dim") +
             Text("  File tips:\n", style="dim") +
-            Text("  #                               ", style="#ffd750") + Text("← lines starting with # are skipped\n", style="dim") +
-            Text("  Blank lines                     ", style="#ffd750") + Text("← ignored automatically\n", style="dim") +
-            Text("  Mixed formats                   ", style="#ffd750") + Text("← each line parsed independently\n\n", style="dim") +
-            Text("  No auth needed?  ", style="dim") + Text("Use host:port or http://host:port\n", style="#ffd750") +
-            Text("  Residential?     ", style="dim") + Text("Prefer SOCKS5 for better compatibility.\n", style="#ffd750") +
-            Text("  Datacenter?      ", style="dim") + Text("HTTP works fine for most cases.\n\n", style="#ffd750") +
-            Text("  Default: ", style="dim") + Text("proxies.txt", style="bold #ffd750") + Text(" in the current folder.", style="dim")
+            Text("  #                               ", style="#2dd4bf") + Text("← lines starting with # are skipped\n", style="dim") +
+            Text("  Blank lines                     ", style="#2dd4bf") + Text("← ignored automatically\n", style="dim") +
+            Text("  Mixed formats                   ", style="#2dd4bf") + Text("← each line parsed independently\n\n", style="dim") +
+            Text("  No auth needed?  ", style="dim") + Text("Use host:port or http://host:port\n", style="#2dd4bf") +
+            Text("  Residential?     ", style="dim") + Text("Prefer SOCKS5 for better compatibility.\n", style="#2dd4bf") +
+            Text("  Datacenter?      ", style="dim") + Text("HTTP works fine for most cases.\n\n", style="#2dd4bf") +
+            Text("  Default: ", style="dim") + Text("proxies.txt", style="bold #2dd4bf") + Text(" in the current folder.", style="dim")
         )
         _panel(file_text)
 
@@ -3786,7 +3786,7 @@ def prompt_proxy_setup():
 
             console.print(
                 indent +
-                f"  [bold #ffd750]Loaded:[/bold #ffd750]  "
+                f"  [bold #2dd4bf]Loaded:[/bold #2dd4bf]  "
                 f"[green]{len(parsed_urls)} proxies[/green]  "
                 f"[dim]│[/dim]  "
                 f"[yellow]{skipped} lines skipped[/yellow]"
@@ -3809,10 +3809,10 @@ def prompt_proxy_setup():
                     print()
                     speed_text = (
                         Text("Select validation speed.\n\n", style="bold bright_white") +
-                        Text("  [1]  ", style="bold #ffd750") + Text("Turbo   ", style="bold white") + Text("1000 threads, 4s timeout  – fastest, high RAM\n", style="dim") +
-                        Text("  [2]  ", style="bold #ffd750") + Text("Fast    ", style="bold white") + Text(" 500 threads, 5s timeout  – recommended\n", style="dim") +
-                        Text("  [3]  ", style="bold #ffd750") + Text("Normal  ", style="bold white") + Text(" 200 threads, 7s timeout  – stable\n", style="dim") +
-                        Text("  [4]  ", style="bold #ffd750") + Text("Slow    ", style="bold white") + Text("  50 threads, 10s timeout – low-end PC", style="dim")
+                        Text("  [1]  ", style="bold #2dd4bf") + Text("Turbo   ", style="bold white") + Text("1000 threads, 4s timeout  – fastest, high RAM\n", style="dim") +
+                        Text("  [2]  ", style="bold #2dd4bf") + Text("Fast    ", style="bold white") + Text(" 500 threads, 5s timeout  – recommended\n", style="dim") +
+                        Text("  [3]  ", style="bold #2dd4bf") + Text("Normal  ", style="bold white") + Text(" 200 threads, 7s timeout  – stable\n", style="dim") +
+                        Text("  [4]  ", style="bold #2dd4bf") + Text("Slow    ", style="bold white") + Text("  50 threads, 10s timeout – low-end PC", style="dim")
                     )
                     _panel(speed_text)
                     speed_choice = _ask("Speed (1-4, Enter = Fast): ")
@@ -3821,7 +3821,7 @@ def prompt_proxy_setup():
 
                     console.print(
                         indent +
-                        f"  [bold #ffd750]Validating:[/bold #ffd750]  "
+                        f"  [bold #2dd4bf]Validating:[/bold #2dd4bf]  "
                         f"[yellow]{len(parsed_urls):,} proxies[/yellow]  "
                         f"[dim]│[/dim]  [cyan]{workers} threads[/cyan]  "
                         f"[dim]│  {timeout}s timeout[/dim]"
@@ -4116,7 +4116,7 @@ def _display_proxy_quality(valid_count, total_count, avg_latency_ms, indent="   
     table.add_row("", "")
     table.add_row(
         "  Rec. Threads",
-        f"[bold #ffd750]{rec}[/bold #ffd750]"
+        f"[bold #2dd4bf]{rec}[/bold #2dd4bf]"
     )
     table.add_row(
         "  Advice",
@@ -4145,7 +4145,7 @@ def _validate_proxies_bulk(urls: List[str], timeout: float = 5.0, max_workers: i
 
     progress = Progress(
         SpinnerColumn(),
-        TextColumn("[bold #ffd750]Validating"),
+        TextColumn("[bold #2dd4bf]Validating"),
         BarColumn(bar_width=30),
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         MofNCompleteColumn(),
@@ -4221,17 +4221,17 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
     total = live_stats.total_accounts
 
     overview_text = Text()
-    overview_text.append("Total Processed: ", style="#ffd750")
-    overview_text.append(f"{proc}/{total}   ", style="#ffaa00")
-    overview_text.append("|   Elapsed Time: ", style="#ffd750")
-    overview_text.append(f"{int(elapsed//60)}m {int(elapsed%60)}s   ", style="#ffaa00")
-    overview_text.append("|   Average Speed: ", style="#ffd750")
-    overview_text.append(f"{rate:.2f} acc/s", style="#ffaa00")
+    overview_text.append("Total Processed: ", style="#2dd4bf")
+    overview_text.append(f"{proc}/{total}   ", style="#22d3ee")
+    overview_text.append("|   Elapsed Time: ", style="#2dd4bf")
+    overview_text.append(f"{int(elapsed//60)}m {int(elapsed%60)}s   ", style="#22d3ee")
+    overview_text.append("|   Average Speed: ", style="#2dd4bf")
+    overview_text.append(f"{rate:.2f} acc/s", style="#22d3ee")
 
     overview_panel = Panel(overview_text, title=f"📊 [bold green]{label}[/bold green]", border_style="green", expand=False)
 
-    status_table = Table(box=box.SIMPLE_HEAVY, border_style="#ffd750", header_style="bold white", expand=False, show_lines=False)
-    status_table.add_column("Category", style="#ffaa00")
+    status_table = Table(box=box.SIMPLE_HEAVY, border_style="#2dd4bf", header_style="bold white", expand=False, show_lines=False)
+    status_table.add_column("Category", style="#22d3ee")
     status_table.add_column("Count", justify="right", style="white")
     status_table.add_column("Percentage", justify="right", style="green")
     status_table.add_column("Visual")
@@ -4250,12 +4250,12 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
     add_row("✦ Clean", stats['clean'], ct, "green")
     add_row("⊘ Not Clean", stats['not_clean'], ct, "yellow")
     add_row("◈ Has CODM", stats['has_codm'], ct, "#38d9c8")
-    add_row("○ No CODM", stats['no_codm'], ct, "#ff79c6")
+    add_row("○ No CODM", stats['no_codm'], ct, "#818cf8")
 
-    status_panel = Panel(status_table, title="🎯 [italic #ffd750]Session Results[/italic #ffd750]", border_style="#ffd750", expand=False)
+    status_panel = Panel(status_table, title="🎯 [italic #2dd4bf]Session Results[/italic #2dd4bf]", border_style="#2dd4bf", expand=False)
 
-    level_table = Table(box=box.SIMPLE_HEAVY, border_style="#ffd750", header_style="bold white", expand=False, show_lines=False)
-    level_table.add_column("Level Range", style="#ffd750")
+    level_table = Table(box=box.SIMPLE_HEAVY, border_style="#2dd4bf", header_style="bold white", expand=False, show_lines=False)
+    level_table.add_column("Level Range", style="#2dd4bf")
     level_table.add_column("Clean", justify="right", style="green")
     level_table.add_column("Visual (Clean)", style="green")
     level_table.add_column("Not Clean", justify="right", style="yellow")
@@ -4273,7 +4273,7 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
         n_bar = f"[yellow]{'█' * int((nc/n_tot)*15)}[/yellow]"
         level_table.add_row(f"Level {rng}", str(cc), c_bar, str(nc), n_bar)
 
-    level_panel = Panel(level_table, title="🌍 [italic #ffd750]Level Distribution[/italic #ffd750]", border_style="#ffd750", expand=False)
+    level_panel = Panel(level_table, title="🌍 [italic #2dd4bf]Level Distribution[/italic #2dd4bf]", border_style="#2dd4bf", expand=False)
 
     console.print("\n")
     console.print(Padding(overview_panel, (0, 0, 0, 4)))
@@ -4296,7 +4296,7 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
         games_panel = Panel(games_table, title="🎮 [italic magenta]Games Found[/italic magenta]", border_style="magenta", expand=False)
         console.print(Padding(games_panel, (0, 0, 0, 4)))
 
-    console.print(Padding(Text.from_markup("[#ffd750]◈  Powered by @dvlist[/#ffd750]"), (1, 0, 1, 6)))
+    console.print(Padding(Text.from_markup("[#2dd4bf]◈  Powered by @dvlist[/#2dd4bf]"), (1, 0, 1, 6)))
 
 
 def bulk_check(bulk_mode: str = 'full'):
@@ -4317,11 +4317,11 @@ def bulk_check(bulk_mode: str = 'full'):
     file_viewer.display_file_table(file_infos)
     selected_file = file_viewer.prompt_file_selection(file_infos)
     if file_viewer.prompt_clean_file():
-        with console.status('[#ffd750]  ↺  Cleaning file encoding…[/#ffd750]', spinner='dots'):
+        with console.status('[#2dd4bf]  ↺  Cleaning file encoding…[/#2dd4bf]', spinner='dots'):
             valid_count, invalid_count = file_manager.clean_file_encoding(selected_file)
         _log('SUCCESS', f'Cleaned: [bold]{valid_count}[/bold] valid, [bright_red]{invalid_count}[/bright_red] removed')
     if file_viewer.prompt_remove_duplicates():
-        with console.status('[#ffd750]  ↺  Removing duplicates…[/#ffd750]', spinner='dots'):
+        with console.status('[#2dd4bf]  ↺  Removing duplicates…[/#2dd4bf]', spinner='dots'):
             removed = file_manager.clean_duplicates(selected_file)
         _log('SUCCESS', f'Removed [bold]{removed}[/bold] duplicate(s)')
     auto_remove = file_viewer.prompt_auto_remove_checked()
@@ -4329,7 +4329,7 @@ def bulk_check(bulk_mode: str = 'full'):
         _log('INFO', '[dim]Auto-remove enabled.[/dim]')
 
     global HARVEST_COOKIES
-    HARVEST_COOKIES = input(f"  \033[38;2;255;170;0m>\033[0m harvest cookies? (y/N): ").strip().lower() == 'y'
+    HARVEST_COOKIES = input(f"  \033[38;2;34;211;238m>\033[0m harvest cookies? (y/N): ").strip().lower() == 'y'
     if HARVEST_COOKIES:
         _log('SUCCESS', 'Cookie harvesting enabled.', '    ')
 
@@ -4350,9 +4350,9 @@ def bulk_check(bulk_mode: str = 'full'):
         file_table = Table(show_header=False, box=None, padding=(0, 1), expand=False)
         file_table.add_column(style='dim', width=12, no_wrap=True)
         file_table.add_column(style='bright_white', no_wrap=True)
-        file_table.add_row('File', f'[#ffd750]{Path(selected_file).name}[/#ffd750]')
+        file_table.add_row('File', f'[#2dd4bf]{Path(selected_file).name}[/#2dd4bf]')
         file_table.add_row('Accounts', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
-        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='#ffaa00', box=CARD, padding=(0, 2), expand=False, width=60))
+        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='#22d3ee', box=CARD, padding=(0, 2), expand=False, width=60))
     except Exception:
         _log('ERROR', 'Could not read file.')
         return
@@ -4364,7 +4364,7 @@ def bulk_check(bulk_mode: str = 'full'):
     info_table.add_column(style='bright_white', no_wrap=True)
     info_table.add_row('Total Queued', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
     info_table.add_row('Status', '[bright_green]Ready[/bright_green]')
-    console.print(Panel(info_table, title='[bold #ffaa00]ℹ ACCOUNT QUEUE[/bold #ffaa00]', border_style='#ffaa00', box=CARD, padding=(0, 2), expand=False, width=50))
+    console.print(Panel(info_table, title='[bold #22d3ee]ℹ ACCOUNT QUEUE[/bold #22d3ee]', border_style='#22d3ee', box=CARD, padding=(0, 2), expand=False, width=50))
     results_manager = ResultsManager(selected_file)
     cookie_manager = CookieManager()
     datadome_manager = DataDomeManager()
@@ -4379,7 +4379,7 @@ def bulk_check(bulk_mode: str = 'full'):
         _log('INFO', '[dim]Direct connection (no proxies)[/dim]')
     print()
     max_threads = 250 if using_proxy else 80
-    _P = '\033[38;2;255;170;0m'
+    _P = '\033[38;2;34;211;238m'
     print()
     print(f"  {_P}│{_RST} {_P}THREAD CONFIG{_RST}")
     print(f"    {_DIM}30-80 direct  ·  80-150 balanced  ·  150+ proxy{_RST}")
@@ -4420,7 +4420,7 @@ def bulk_check(bulk_mode: str = 'full'):
         except Exception:
             return None
     _saved_tg = _tg_load()
-    _P = '\033[38;2;255;170;0m'
+    _P = '\033[38;2;34;211;238m'
     print()
     print(f"  {_P}│{_RST} {_P}TELEGRAM NOTIFICATIONS{_RST}")
     print(f"    {_WH}1{_RST} clean only  {_DIM}·{_RST}  {_WH}2{_RST} not-clean  {_DIM}·{_RST}  {_WH}3{_RST} both  {_DIM}·{_RST}  {_WH}4{_RST} skip")
@@ -4449,7 +4449,7 @@ def bulk_check(bulk_mode: str = 'full'):
             else:
                 _saved_tg = None
         if not _saved_tg:
-            _P = '\033[38;2;255;170;0m'
+            _P = '\033[38;2;34;211;238m'
             TG_BOT_TOKEN = input(f'  {_P}▸{_RST} bot token: ').strip()
             TG_CHAT_ID = input(f'  {_P}▸{_RST} chat id: ').strip()
             if TG_SEND_CLEAN:
@@ -4735,7 +4735,7 @@ def single_check():
     
     console.print(Panel(
         Text("SINGLE CHECK", style="bold bright_white"),
-        border_style="#ffaa00",
+        border_style="#22d3ee",
         box=box.ROUNDED,
         expand=False
     ))
@@ -4800,7 +4800,7 @@ def single_check():
         if CHECK_OTHER_GAMES:
             (results_manager.base_dir / 'Games').mkdir(parents=True, exist_ok=True)
         
-        _log('INFO', f'[dim]Checking: [bold #ffd750]{account}[/bold #ffd750]…[/dim]')
+        _log('INFO', f'[dim]Checking: [bold #2dd4bf]{account}[/bold #2dd4bf]…[/dim]')
         print()
         
         processaccount(
@@ -4829,13 +4829,13 @@ def single_check():
         if save_response == 'y':
             for sub in ('Country', 'Level', 'Games', 'Garena Shells'):
                 (results_manager.base_dir / sub).mkdir(parents=True, exist_ok=True)
-            _log('SAVE', f'Saved to [#ffd750]{results_manager.base_dir}[/#ffd750]')
+            _log('SAVE', f'Saved to [#2dd4bf]{results_manager.base_dir}[/#2dd4bf]')
         else:
             _log('INFO', '[dim]Result discarded — not saved.[/dim]')
         
         console.print(Panel(
             Text("CHECK ANOTHER?", style="bold bright_white") + Text(" (y/n)", style="dim"),
-            border_style="#ffaa00",
+            border_style="#22d3ee",
             box=box.ROUNDED,
             expand=False
         ))
@@ -4851,7 +4851,7 @@ def single_check():
         display_banner()
         console.print(Panel(
             Text("SINGLE ACCOUNT CHECK", style="bold bright_white"),
-            border_style="#ffaa00",
+            border_style="#22d3ee",
             box=box.ROUNDED,
             expand=False
         ))
@@ -4954,7 +4954,7 @@ def proxy_diagnostic():
     console.print(Panel(
         Text("PROXY DIAGNOSTIC", style="bold bright_white") +
         Text("\nHTTP CONNECT + TLS probe to sso.garena.com:443", style="dim"),
-        border_style="#ffaa00", box=box.ROUNDED, expand=False
+        border_style="#22d3ee", box=box.ROUNDED, expand=False
     ))
     print()
 
@@ -5033,9 +5033,9 @@ def proxy_diagnostic():
 
 def display_main_menu():
     R    = '\033[0m'
-    GOLD = '\033[38;2;255;215;80m'
-    TEAL = '\033[38;2;56;217;200m'
-    PINK = '\033[38;2;255;121;198m'
+    GOLD = '\033[38;2;34;211;238m'    # cyan (primary)
+    TEAL = '\033[38;2;45;212;191m'    # teal
+    PINK = '\033[38;2;129;140;248m'   # periwinkle
     W    = '\033[1;97m'
     DM   = '\033[2m'
 
@@ -5089,9 +5089,9 @@ def display_banner():
     clear_screen()
     tw = _tw()
     R  = '\033[0m'
-    AM = '\033[38;2;255;215;80m'   # gold
-    CY = '\033[38;2;56;217;200m'   # teal
-    PK = '\033[38;2;255;121;198m'  # pink
+    AM = '\033[38;2;34;211;238m'   # cyan
+    CY = '\033[38;2;45;212;191m'   # teal
+    PK = '\033[38;2;129;140;248m'  # periwinkle
     DM = '\033[2m'
     W  = '\033[1;97m'
 
@@ -5104,14 +5104,14 @@ def display_banner():
         r" ╚═╝  ╚═╝ ╚══════╝ ╚══════╝  ╚═════╝",
     ]
 
-    # gold (top) → pink (bottom): warm, vibrant, coordinated with the menu
+    # cyan (top) → periwinkle (bottom): cool, vibrant, coordinated with the menu
     row_colors = [
-        (255, 215,  80,  255, 198, 120),
-        (255, 198, 110,  255, 174, 150),
-        (255, 178, 140,  255, 154, 175),
-        (255, 158, 165,  255, 138, 190),
-        (255, 138, 185,  255, 126, 196),
-        (255, 121, 198,  255, 121, 198),
+        ( 34, 211, 238,   60, 205, 240),
+        ( 40, 198, 240,   72, 184, 244),
+        ( 52, 182, 244,   90, 166, 247),
+        ( 68, 166, 247,  106, 154, 249),
+        ( 86, 152, 249,  120, 146, 250),
+        (104, 142, 250,  129, 140, 248),
     ]
 
     def _center(s, vis_len):
@@ -5318,7 +5318,7 @@ def file_splitter():
 
     while True:
         try:
-            prompt_panel = Panel("[white]How many lines per file?[/white]", title="[#ffd750]❯ Input[/#ffd750]", border_style="#ffd750", box=box.ROUNDED, expand=False)
+            prompt_panel = Panel("[white]How many lines per file?[/white]", title="[#2dd4bf]❯ Input[/#2dd4bf]", border_style="#2dd4bf", box=box.ROUNDED, expand=False)
             rprint(Padding(prompt_panel, (0, 0, 0, 4)))
             lines_per_file = int(input("        ❯ ").strip())
             if lines_per_file > 0:
@@ -5350,7 +5350,7 @@ def file_splitter():
                 out_file.writelines(chunk)
 
         from rich.table import Table
-        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="#ffd750")
+        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="#2dd4bf")
         summary_table.add_column("Property", style="dim")
         summary_table.add_column("Value", style="bold white")
 
@@ -5362,7 +5362,7 @@ def file_splitter():
         summary_panel = Panel(
             summary_table,
             title="[bold green]SPLITTING COMPLETE[/bold green]",
-            subtitle="[dim #ffd750]Powered by: @dvlist[/dim #ffd750]",
+            subtitle="[dim #2dd4bf]Powered by: @dvlist[/dim #2dd4bf]",
             border_style="green",
             expand=False
         )
@@ -5430,7 +5430,7 @@ def file_merger():
         input(f'\n  {_DIM}↵ menu{_RST} ')
         return
 
-    info_table = Table(box=box.HORIZONTALS, header_style="bold #ffaa00", border_style="#ffaa00")
+    info_table = Table(box=box.HORIZONTALS, header_style="bold #22d3ee", border_style="#22d3ee")
     info_table.add_column("Filename", style="bold white")
     info_table.add_column("Size", justify="right", style="white")
     info_table.add_column("Lines", justify="right", style="white")
@@ -5438,10 +5438,10 @@ def file_merger():
     for fd in file_details:
         info_table.add_row(fd["name"], fd["size"], str(fd["lines"]))
 
-    panel = Panel(info_table, title="[bold white]FILES IN MERGE FOLDER[/bold white]", box=box.DOUBLE_EDGE, border_style="#ffaa00", expand=False)
+    panel = Panel(info_table, title="[bold white]FILES IN MERGE FOLDER[/bold white]", box=box.DOUBLE_EDGE, border_style="#22d3ee", expand=False)
     rprint(Padding(panel, (0, 0, 0, 4)))
 
-    prompt_panel = Panel("[white]Press Enter to start merging[/white]", title="[#ffaa00]❯ Action[/#ffaa00]", border_style="#ffaa00", box=box.ROUNDED, expand=False)
+    prompt_panel = Panel("[white]Press Enter to start merging[/white]", title="[#22d3ee]❯ Action[/#22d3ee]", border_style="#22d3ee", box=box.ROUNDED, expand=False)
     rprint(Padding(prompt_panel, (0, 0, 0, 4)))
     input("        ❯ ")
 
@@ -5472,7 +5472,7 @@ def file_merger():
         current_time = datetime.now().strftime("%I:%M %p")
         current_date = datetime.now().strftime("%Y-%m-%d")
 
-        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="#ffd750")
+        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="#2dd4bf")
         summary_table.add_column("Property", style="dim")
         summary_table.add_column("Value", style="bold white")
 
@@ -5485,7 +5485,7 @@ def file_merger():
         summary_panel = Panel(
             summary_table,
             title="[bold green]MERGING COMPLETE[/bold green]",
-            subtitle="[dim #ffd750]Powered by: @dvlist[/dim #ffd750]",
+            subtitle="[dim #2dd4bf]Powered by: @dvlist[/dim #2dd4bf]",
             border_style="green",
             expand=False
         )
@@ -5525,8 +5525,8 @@ def high_security_encryption():
         input(f'\n  {_DIM}↵ menu{_RST} ')
         return
 
-    info_table = Table(box=box.HORIZONTALS, header_style="bold #ffd750", border_style="#ffd750", padding=(0, 2))
-    info_table.add_column("#", style="#ffaa00", justify="center")
+    info_table = Table(box=box.HORIZONTALS, header_style="bold #2dd4bf", border_style="#2dd4bf", padding=(0, 2))
+    info_table.add_column("#", style="#22d3ee", justify="center")
     info_table.add_column("Filename", style="bold white")
     info_table.add_column("Size", style="white", justify="right")
 
@@ -5540,12 +5540,12 @@ def high_security_encryption():
             size /= 1024.0
         info_table.add_row(str(idx), fp.name, size_str)
 
-    panel = Panel(info_table, title="[bold white]PYTHON FILES IN COMBO[/bold white]", box=box.DOUBLE_EDGE, border_style="#ffaa00", expand=False)
+    panel = Panel(info_table, title="[bold white]PYTHON FILES IN COMBO[/bold white]", box=box.DOUBLE_EDGE, border_style="#22d3ee", expand=False)
     rprint(Padding(panel, (0, 0, 0, 4)))
 
     while True:
         try:
-            prompt_panel = Panel("[white]Enter file number[/white]", title="[#ffd750]❯ Input[/#ffd750]", border_style="#ffd750", box=box.ROUNDED, expand=False)
+            prompt_panel = Panel("[white]Enter file number[/white]", title="[#2dd4bf]❯ Input[/#2dd4bf]", border_style="#2dd4bf", box=box.ROUNDED, expand=False)
             rprint(Padding(prompt_panel, (0, 0, 0, 4)))
             choice_idx = int(input("        ❯ ").strip())
             if 1 <= choice_idx <= len(py_files):
@@ -5557,7 +5557,7 @@ def high_security_encryption():
 
     while True:
         try:
-            prompt_panel = Panel("[white]How many layers of Base64 encryption?[/white]", title="[#ffd750]❯ Input[/#ffd750]", border_style="#ffd750", box=box.ROUNDED, expand=False)
+            prompt_panel = Panel("[white]How many layers of Base64 encryption?[/white]", title="[#2dd4bf]❯ Input[/#2dd4bf]", border_style="#2dd4bf", box=box.ROUNDED, expand=False)
             rprint(Padding(prompt_panel, (0, 0, 0, 4)))
             layers = int(input("        ❯ ").strip())
             if layers > 0:
@@ -5599,7 +5599,7 @@ def high_security_encryption():
         current_time = datetime.now().strftime("%I:%M %p")
         current_date = datetime.now().strftime("%Y-%m-%d")
 
-        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="#ffd750")
+        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="#2dd4bf")
         summary_table.add_column("Property", style="dim")
         summary_table.add_column("Value", style="bold white")
 
@@ -5613,7 +5613,7 @@ def high_security_encryption():
         summary_panel = Panel(
             summary_table,
             title="[bold green]ENCRYPTION COMPLETE[/bold green]",
-            subtitle="[dim #ffd750]Powered by: @dvlist[/dim #ffd750]",
+            subtitle="[dim #2dd4bf]Powered by: @dvlist[/dim #2dd4bf]",
             border_style="green",
             expand=False
         )
