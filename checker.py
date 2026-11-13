@@ -495,31 +495,44 @@ class AccountFileViewer:
         self.console = Console()
 
     def display_file_table(self, file_infos):
+        # rriell-style: combo-file table wrapped in a rounded Panel.
         print()
-        table = Table(
-            title='[bold bright_cyan]📂 COMBO FILES[/bold bright_cyan]',
-            box=box.ROUNDED, header_style="bold bright_cyan",
-            border_style="bright_cyan", padding=(0, 2), title_justify='left',
-        )
-        table.add_column("#", style="bold bright_cyan", justify="right", width=3)
+        table = Table(box=box.SIMPLE_HEAD, header_style="bold bright_cyan",
+                      border_style="dim", padding=(0, 2))
+        table.add_column("#",        style="bold bright_cyan", justify="right", width=3)
         table.add_column("Filename", style="bold white")
-        table.add_column("Size", style="yellow", justify="right")
+        table.add_column("Size",     style="yellow",      justify="right")
         table.add_column("Accounts", style="bright_green", justify="right")
-        table.add_column("", width=18)
+        table.add_column("Bar",      style="bright_cyan", width=18)
         max_ac = max((i['account_count'] for i in file_infos)) if file_infos else 1
         for idx, info in enumerate(file_infos, 1):
             bar_w = 16
             filled = int(info['account_count'] / max_ac * bar_w)
             bar = f"[bright_cyan]{'█' * filled}[/bright_cyan][dim]{'░' * (bar_w - filled)}[/dim]"
-            table.add_row(str(idx), info['name'], info['size_str'], f"{info['account_count']:,}", bar)
-        self.console.print(table)
+            table.add_row(str(idx), info['name'], info['size_str'],
+                          f"{info['account_count']:,}", bar)
+        from rich.padding import Padding
+        self.console.print(Padding(
+            Panel(table,
+                  title='[bold bright_cyan]📂 COMBO FILES[/bold bright_cyan]',
+                  border_style='bright_cyan', box=box.ROUNDED, expand=False),
+            (0, 0, 0, 2)))
         print()
+
+    def _ask_panel(self, body, title, border, prompt_color='96'):
+        from rich.padding import Padding
+        self.console.print(Padding(
+            Panel(body,
+                  title=f'[bold {border}]{title}[/bold {border}]',
+                  border_style=border, box=box.ROUNDED, expand=False),
+            (0, 0, 0, 2)))
+        return input(f"        \033[{prompt_color}m❯\033[0m ").strip().lower()
 
     def prompt_file_selection(self, file_infos):
         while True:
-            _prompt_box("[white]Enter file number or [bright_cyan]'auto'[/bright_cyan] for the largest[/white]",
-                        '❯ Select File', border='bright_cyan')
-            choice = input("    \033[96m❯\033[0m ").strip().lower()
+            choice = self._ask_panel(
+                "[white]Enter file number or [bright_yellow]'auto'[/bright_yellow] to pick the largest[/white]",
+                '❯ Select File', 'bright_cyan', '96')
             if choice == 'auto':
                 largest = max(file_infos, key=lambda x: x['account_count'])
                 _log('SUCCESS', f"Auto-selected: {largest['name']}")
@@ -534,22 +547,19 @@ class AccountFileViewer:
 
     def prompt_clean_file(self):
         print()
-        _prompt_box('[white]Clean file encoding? (Y/n)[/white]',
-                    '❯ Encoding', border='bright_cyan')
-        choice = input("    \033[96m❯\033[0m ").strip().lower()
-        return choice != 'n'
+        return self._ask_panel(
+            '[white]Clean file encoding? [dim](Y/n)[/dim][/white]',
+            '❯ Encoding', 'bright_cyan', '96') != 'n'
 
     def prompt_remove_duplicates(self):
-        _prompt_box('[white]Remove duplicate lines? (y/N)[/white]',
-                    '❯ Deduplicate', border='bright_green')
-        choice = input("    \033[92m❯\033[0m ").strip().lower()
-        return choice == 'y'
+        return self._ask_panel(
+            '[white]Remove duplicate lines? [dim](y/N)[/dim][/white]',
+            '❯ Deduplicate', 'bright_green', '92') == 'y'
 
     def prompt_auto_remove_checked(self):
-        _prompt_box('[white]Auto-remove checked lines from the file? (y/N)[/white]',
-                    '❯ Auto-Remove', border='bright_yellow')
-        choice = input("    \033[93m❯\033[0m ").strip().lower()
-        return choice == 'y'
+        return self._ask_panel(
+            '[white]Auto-remove checked lines? [dim](y/N)[/dim][/white]',
+            '❯ Auto-Remove', 'bright_yellow', '93') == 'y'
 
 class LiveStats:
     def __init__(self):
