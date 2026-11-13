@@ -1018,6 +1018,7 @@ class BulkLiveDashboard:
         TL  = E + '[94m'     # blue — CODM
         PK  = E + '[95m'     # magenta — no CODM
         WH  = E + '[97m'     # white — text
+        MU  = E + '[38;5;245m'  # grey50 — muted labels
         DIM = E + '[2m'
         OR  = E + '[96m'     # cyan — level bars
         BRD = E + '[1;96m'   # bright cyan — frame (vivid, like titocod)
@@ -1036,7 +1037,7 @@ class BulkLiveDashboard:
         _tw = shutil.get_terminal_size((84, 24)).columns
         W   = max(min(_tw - 2, 120), 60)
         V   = BulkLiveDashboard._vlen
-        H   = '─'
+        H   = '═'
         HH  = '━'
         IW  = W - 2
 
@@ -1076,20 +1077,20 @@ class BulkLiveDashboard:
             vl = V(content)
             if vl > IW:
                 t, tv = _trunc(content, IW)
-                return f'{BRD}│{RST}' + t + ' ' * max(IW - tv, 0) + f'{BRD}│{RST}'
-            return f'{BRD}│{RST}' + _pad(content, IW) + f'{BRD}│{RST}'
+                return f'{BRD}║{RST}' + t + ' ' * max(IW - tv, 0) + f'{BRD}║{RST}'
+            return f'{BRD}║{RST}' + _pad(content, IW) + f'{BRD}║{RST}'
 
         def _pct(n, d):
             return f'({n/d*100:.1f}%)' if d else '(0.0%)'
 
         # ═══ OUTER BORDER + HEADER + STAT TABLE (one connected box) ═══
-        top_border = f'{BRD}╭{H * IW}╮{RST}'
-        bot_border = f'{BRD}╰{H * IW}╯{RST}'
+        top_border = f'{BRD}╔{H * IW}╗{RST}'
+        bot_border = f'{BRD}╚{H * IW}╝{RST}'
 
         hdr_l = f' {YL}◆{RST} {YL}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
         hdr_r = f'{GN}●{RST} {GN}ACTIVE{RST}  {DIM}·{RST}  {WH}{clock}{RST} '
         hdr_gap = max(IW - V(hdr_l) - V(hdr_r), 1)
-        hdr_row = f'{BRD}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}│{RST}'
+        hdr_row = f'{BRD}║{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}║{RST}'
 
         # Stat table — separate thick box inside outer border
         ncols = 5
@@ -1172,21 +1173,28 @@ class BulkLiveDashboard:
         ip_val = 'CLEAR' if ip_ok else 'BLOCKED'
         ip_col = GN if ip_ok else RD
 
+        base = done or 1
+        vb   = valid or 1
+        def _arow(icon, label, cnt, frac, c, pctstr):
+            lbl = _pad(f'{icon} {label}', 11)
+            return f'  {c}{lbl}{RST} {c}{cnt:>6,}{RST} {_bar(frac, 8, c)} {c}{pctstr}{RST}'
+        def _srow(icon, label, value, vcol):
+            return f'   {CY}{icon}{RST} {MU}{_pad(label, 9)}{RST}  {vcol}{value}{RST}'
         sec1 = [
             _lr(f' {CY}│{RST} {WH}ACCOUNT RESULTS{RST}',
                 f' {CY}│{RST} {WH}SYSTEM{RST}'),
-            _lr(f'   {GN}▸{RST} {WH}Valid{RST}        {GN}{valid:>8,}{RST}  {GN}{vp}{RST}',
-                f'   {CY}◇{RST} {CY}Threads{RST}     {WH}{thr_val}{RST}'),
-            _lr(f'   {RD}▸{RST} {WH}Invalid{RST}      {RD}{invalid:>8,}{RST}  {RD}{ip_s}{RST}',
-                f'   {CY}●{RST} {CY}IP Status{RST}   {ip_col}{ip_val}{RST}'),
-            _lr(f'   {GN}◆{RST} {WH}Clean{RST}        {GN}{clean:>8,}{RST}  {GN}{cp}{RST}',
-                f'   {CY}▸{RST} {CY}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
-            _lr(f'   {YL}◇{RST} {WH}Not Clean{RST}    {YL}{nc:>8,}{RST}  {YL}{np_s}{RST}',
-                f'   {CY}◆{RST} {CY}CPM{RST}         {WH}{cpm:.0f}{RST}'),
-            _lr(f'   {TL}●{RST} {WH}CODM{RST}         {TL}{codm_count:>8,}{RST}  {TL}{dp}{RST}',
-                f'   {CY}◇{RST} {CY}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
-            _lr(f'   {PK}○{RST} {WH}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {PK}{ndp}{RST}',
-                f'   {CY}○{RST} {CY}ETA{RST}         {CY}{eta_str}{RST}'),
+            _lr(_arow('▸', 'Valid',     valid,      valid/base,      GN, vp),
+                _srow('◇', 'Threads',   thr_val,                     WH)),
+            _lr(_arow('▸', 'Invalid',   invalid,    invalid/base,    RD, ip_s),
+                _srow('●', 'IP Status', ip_val,                      ip_col)),
+            _lr(_arow('◆', 'Clean',     clean,      clean/vb,        GN, cp),
+                _srow('▸', 'Speed',     f'{rate:.1f}/s',             WH)),
+            _lr(_arow('◇', 'Not Clean', nc,         nc/vb,           YL, np_s),
+                _srow('◆', 'CPM',       f'{cpm:.0f}',                WH)),
+            _lr(_arow('●', 'CODM',      codm_count, codm_count/vb,   TL, dp),
+                _srow('◇', 'Elapsed',   elapsed_str,                 WH)),
+            _lr(_arow('○', 'No CODM',   no_codm,    no_codm/vb,      PK, ndp),
+                _srow('○', 'ETA',       eta_str,                     CY)),
         ]
 
         # ═══ SECTION 2: LEVELS & PEAKS | LIVE FEED ═══
