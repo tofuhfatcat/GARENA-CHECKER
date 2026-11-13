@@ -1079,9 +1079,13 @@ class BulkLiveDashboard:
             row = f' {DIM}┃{RST}' + f'{DIM}┃{RST}'.join(cells[c][ri] for c in range(ncols)) + f'{DIM}┃{RST}'
             stat_rows.append(row)
 
-        # ═══ PROGRESS LINE ═══
-        prog_text = f'{DIM}—{RST} PROGRESS {YL}{pct:.1f}%{RST} {DIM}—{RST} {WH}{done:,}{RST} {DIM}/{RST} {WH}{total:,}{RST} {DIM}—{RST} ETA {CY}{eta_str}{RST} {DIM}—{RST}'
-        prog = _ctr(prog_text, IW)
+        # ═══ PROGRESS LINE (filling bar) ═══
+        prog_pre  = f' {DIM}PROGRESS{RST} {YL}{pct:.1f}%{RST}  '
+        prog_post = f'  {WH}{done:,}{RST}{DIM}/{RST}{WH}{total:,}{RST}  {DIM}ETA{RST} {CY}{eta_str}{RST} '
+        bar_w = max(IW - V(prog_pre) - V(prog_post), 10)
+        fill  = int(round(bar_w * min(max(pct, 0.0), 100.0) / 100))
+        bar   = f'{GN}{"━" * fill}{RST}{DIM}{"─" * (bar_w - fill)}{RST}'
+        prog  = prog_pre + bar + prog_post
 
         # ═══ TWO-COLUMN HELPERS ═══
         half = IW // 2
@@ -1196,8 +1200,9 @@ class BulkLiveDashboard:
 
         # (TOP HITS moved into left column above)
 
-        # ═══ BOTTOM BAR ═══
-        bot_content = f' {AM}◆{RST} {AM}@dvlist{RST} {DIM}·{RST} {CY}{pct:.1f}%{RST} {DIM}·{RST} {WH}{rate:.1f}/s{RST} {DIM}·{RST} ETA {CY}{eta_str}{RST} {DIM}·{RST} {WH}{done:,}{RST} {DIM}/ {total:,}{RST}'
+        # ═══ BOTTOM BAR (centered) ═══
+        bot_content = f'{AM}◆{RST} {AM}@dvlist{RST} {DIM}·{RST} {CY}{pct:.1f}%{RST} {DIM}·{RST} {WH}{rate:.1f}/s{RST} {DIM}·{RST} ETA {CY}{eta_str}{RST} {DIM}·{RST} {WH}{done:,}{RST} {DIM}/ {total:,}{RST}'
+        bot_content = _ctr(bot_content, IW)
 
         # ═══ ASSEMBLE ═══
         lines = ['', top_border, hdr_row]
