@@ -383,7 +383,7 @@ CHECK_OTHER_GAMES: bool = False
 GAME_FILE_MAP = {'CODM': 'CODM.txt', 'FREEFIRE': 'FreeFire.txt', 'FREE FIRE': 'FreeFire.txt', 'ROV': 'ROV.txt', 'DELTA FORCE': 'DeltaForce.txt', 'AOV': 'AOV.txt', 'SPEED DRIFTERS': 'SpeedDrifters.txt', 'BLACK CLOVER M': 'BlackCloverM.txt', 'GARENA UNDAWN': 'Undawn.txt', 'FC ONLINE': 'FCOnline.txt', 'FC ONLINE M': 'FCOnlineM.txt', 'MOONLIGHT BLADE': 'MoonlightBlade.txt', 'FAST THRILL': 'FastThrill.txt', 'THE WORLD OF WAR': 'WorldOfWar.txt'}
 GAME_DISPLAY_NAMES = [('CODM', 'CODM'), ('FREEFIRE', 'Free Fire'), ('ROV', 'ROV'), ('DELTA FORCE', 'Delta Force'), ('AOV', 'AOV'), ('SPEED DRIFTERS', 'Speed Drifters'), ('BLACK CLOVER M', 'Black Clover M'), ('GARENA UNDAWN', 'Undawn'), ('FC ONLINE', 'FC Online'), ('FC ONLINE M', 'FC Online M'), ('MOONLIGHT BLADE', 'Moonlight Blade'), ('FAST THRILL', 'Fast Thrill'), ('THE WORLD OF WAR', 'World of War')]
 OAUTH_MAX_RETRIES = 3
-OAUTH_RETRY_DELAY = 2
+OAUTH_RETRY_DELAY = 0.3
 
 MSDK_UA = (
     "Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36; GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)"
@@ -2916,14 +2916,16 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
 
             if v1 == 'NETWORK_ERROR':
                 if attempt < max_retries:
-                    backoff = min(2 ** attempt, 30) + random.uniform(0, 2)
+                    # On a rotating IP a reset just means the exit IP flipped —
+                    # the new one is already live, so retry almost immediately
+                    # instead of an exponential backoff that burns throughput.
+                    backoff = random.uniform(0.1, 0.4)
                     if proxy_manager and proxy_manager.is_loaded():
                         try:
                             session.proxies.clear()
                             session.proxies.update(proxy_manager.get_next())
                         except Exception:
                             pass
-                    # [suppressed] network error backoff print
                     time.sleep(backoff)
                     continue
                 if defer_transient:
@@ -3030,10 +3032,12 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                         proxy_manager.report_failure(_cur_proxy, is_403=True)
                 if datadome_manager.handle_403(session):
                     if attempt < max_retries:
-                        backoff = min(2 ** attempt, 60) + random.uniform(0, 3)
-                        # [suppressed] 403 backoff print
-                        time.sleep(backoff)
+                        # Stale datadome on a flipped IP — handle_403 refreshed it
+                        # and the new IP is live, so retry fast, no long backoff.
+                        time.sleep(random.uniform(0.1, 0.4))
                         continue
+                if defer_transient:
+                    return 'TRANSIENT'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Cookie Banned/IP Blocked'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
@@ -3262,10 +3266,12 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             if attempt < max_retries:
-                backoff = min(2 ** attempt, 60) + random.uniform(0, 2)
-                # [suppressed] connection/timeout backoff print
-                time.sleep(backoff)
+                # Reset/timeout is almost always the exit IP flipping mid-request;
+                # the new IP is already live, so retry fast instead of backing off.
+                time.sleep(random.uniform(0.1, 0.4))
                 continue
+            if defer_transient:
+                return 'TRANSIENT'
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Connection/Timeout Error'}
             live_stats.update_stats(is_error=True)
             results_manager.add_account(err_data)
