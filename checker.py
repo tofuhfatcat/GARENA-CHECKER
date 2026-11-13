@@ -4548,9 +4548,18 @@ def bulk_check(bulk_mode: str = 'full'):
             dashboard.record_start(my_index, acc_name)
         except Exception:
             pass
+        ip_change_tries = 0
         while True:
             status, acc_name, _ = _worker(account_line)
             if status == 'IP_CHANGED':
+                ip_change_tries += 1
+                # Cap retries: on a single blocked IP that never actually changes,
+                # this loop would spin forever and hang the tail of the run.
+                if ip_change_tries > 3:
+                    dashboard.record(my_index, acc_name, success=False, error_reason='IP Blocked')
+                    with stats_lock:
+                        overall_done += 1
+                    return
                 if hasattr(_thread_local, 'session'):
                     try:
                         _thread_local.session.close()
