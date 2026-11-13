@@ -1043,6 +1043,30 @@ class BulkLiveDashboard:
             lp = max((width - vis) // 2, 0)
             return ' ' * lp + text + ' ' * max(width - vis - lp, 0)
 
+        def _rj(text, width):
+            # right-justify by visible length
+            return ' ' * max(width - V(text), 0) + text
+
+        def _bar(frac, width, color):
+            # summary-style █ block bar, dim track for the remainder
+            frac = min(max(frac, 0.0), 1.0)
+            fill = int(round(frac * width))
+            return color + '█' * fill + RST + DIM + '░' * (width - fill) + RST
+
+        def _clip(text, width):
+            # visible-length clip of ANSI text to width (no ellipsis)
+            vis = 0; out = []; i = 0; s = text
+            while i < len(s):
+                if s[i] == '\x1b':
+                    j = s.find('m', i)
+                    if j >= 0:
+                        out.append(s[i:j+1]); i = j + 1; continue
+                if vis >= width:
+                    break
+                out.append(s[i]); vis += 1; i += 1
+            out.append(RST)
+            return ''.join(out)
+
         def _bord(content):
             vl = V(content)
             if vl > IW:
@@ -1081,9 +1105,9 @@ class BulkLiveDashboard:
 
         def _cell(val, label, sub, cwidth):
             return [
-                _ctr(f'{WH}{val}{RST}', cwidth),
-                _ctr(f'{DIM}{label}{RST}', cwidth),
-                _ctr(sub, cwidth),
+                _ctr(_clip(f'{WH}{val}{RST}', cwidth), cwidth),
+                _ctr(_clip(f'{DIM}{label}{RST}', cwidth), cwidth),
+                _ctr(_clip(sub, cwidth), cwidth),
             ]
 
         cells = [_cell(v, l, sb, widths[i]) for i, (v, l, sb) in enumerate(stat_data)]
@@ -1133,6 +1157,26 @@ class BulkLiveDashboard:
             return t + ' ' * max(lw - vis, 0) + f'{DIM}│{RST}' + right_text
 
         # ═══ SECTION 1: ACCOUNT RESULTS | SYSTEM ═══
+        lw = half - 1                       # left-panel width (matches _lr)
+        rw = IW - half                      # right-panel width
+        # Responsive column widths — derived from the live panel width, applied
+        # uniformly so columns always align regardless of terminal size.
+        L_lbl = min(max(lw // 4, 10), 13)   # icon + name
+        L_cnt = 7                           # count (right)
+        L_pct = 8                           # (100.0%)
+        L_bar = max(lw - 5 - L_lbl - L_cnt - L_pct, 0)
+        R_lbl = min(max(rw // 3, 10), 13)
+
+        def _arow(icon, name, color, count, pct_str, frac):
+            lbl = _pad(f'{icon} {name}', L_lbl)
+            seg = f'  {color}{lbl}{RST} {color}{_rj(count, L_cnt)}{RST} {DIM}{_rj(pct_str, L_pct)}{RST}'
+            if L_bar >= 4:
+                seg += ' ' + _bar(frac, L_bar, color)
+            return seg
+
+        def _sysrow(icon, label, value, vcol):
+            return f'  {DIM}{_pad(f"{icon} {label}", R_lbl)}{RST} {vcol}{value}{RST}'
+
         vp   = _pct(valid, done)
         ip_s = _pct(invalid, done)
         cp   = _pct(clean, valid)
@@ -1142,51 +1186,67 @@ class BulkLiveDashboard:
 
         ip_val = 'CLEAR' if ip_ok else 'BLOCKED'
         ip_col = GN if ip_ok else RD
+        base = done or 1
+
+        # header + heavy rule (summary style)
+        l_hdr = f'  {DIM}{_pad("Category", L_lbl)} {_rj("Count", L_cnt)} {_rj("%", L_pct)}{RST}'
+        if L_bar >= 4:
+            l_hdr += f' {DIM}{_pad("Visual", L_bar)}{RST}'
+        l_rule = f'  {DIM}{HH * max(lw - 2, 1)}{RST}'
+        r_hdr  = f'  {DIM}{_pad("Metric", R_lbl)} Value{RST}'
+        r_rule = f'  {DIM}{HH * max(rw - 2, 1)}{RST}'
 
         sec1 = [
             _lr(f' {AM}│{RST} {AM}ACCOUNT RESULTS{RST}',
                 f' {AM}│{RST} {AM}SYSTEM{RST}'),
-            _lr(f'   {GN}▸{RST} {WH}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
-                f'   {DIM}◇{RST} {DIM}Threads{RST}     {WH}{thr_val}{RST}'),
-            _lr(f'   {RD}▸{RST} {WH}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
-                f'   {GN}●{RST} {DIM}IP Status{RST}   {ip_col}{ip_val}{RST}'),
-            _lr(f'   {GN}◆{RST} {WH}Clean{RST}        {GN}{clean:>8,}{RST}  {DIM}{cp}{RST}',
-                f'   {DIM}▸{RST} {DIM}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
-            _lr(f'   {YL}◇{RST} {WH}Not Clean{RST}    {YL}{nc:>8,}{RST}  {DIM}{np_s}{RST}',
-                f'   {DIM}◆{RST} {DIM}CPM{RST}         {WH}{cpm:.0f}{RST}'),
-            _lr(f'   {OR}●{RST} {WH}CODM{RST}         {OR}{codm_count:>8,}{RST}  {DIM}{dp}{RST}',
-                f'   {DIM}◇{RST} {DIM}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
-            _lr(f'   {DIM}○{RST} {WH}No CODM{RST}      {DIM}{no_codm:>8,}{RST}  {DIM}{ndp}{RST}',
-                f'   {DIM}○{RST} {DIM}ETA{RST}         {CY}{eta_str}{RST}'),
+            _lr(l_hdr,  r_hdr),
+            _lr(l_rule, r_rule),
+            _lr(_arow('▸', 'Valid',     GN, f'{valid:,}',      vp,   valid/base),
+                _sysrow('◇', 'Threads',   thr_val,          WH)),
+            _lr(_arow('▸', 'Invalid',   RD, f'{invalid:,}',    ip_s, invalid/base),
+                _sysrow('●', 'IP Status', ip_val,           ip_col)),
+            _lr(_arow('◆', 'Clean',     GN, f'{clean:,}',      cp,   clean/max(valid,1)),
+                _sysrow('▸', 'Speed',     f'{rate:.1f}/s',  WH)),
+            _lr(_arow('◇', 'Not Clean', YL, f'{nc:,}',         np_s, nc/max(valid,1)),
+                _sysrow('◆', 'CPM',       f'{cpm:.0f}',     WH)),
+            _lr(_arow('●', 'CODM',      OR, f'{codm_count:,}', dp,   codm_count/max(valid,1)),
+                _sysrow('◇', 'Elapsed',   elapsed_str,      WH)),
+            _lr(_arow('○', 'No CODM',   DIM, f'{no_codm:,}',   ndp,  no_codm/max(valid,1)),
+                _sysrow('○', 'ETA',       eta_str,          CY)),
         ]
 
         # ═══ SECTION 2: LEVELS & PEAKS | LIVE FEED ═══
         lvl_total_n = sum(lvl_b) or 1
-        lvl_labels = ['Lv  1-100', 'Lv 101-200', 'Lv 201-349', 'Lv  350+']
+        lvl_labels = ['Lv 1-100', 'Lv 101-200', 'Lv 201-349', 'Lv 350+']
         lvl_colors = [RD, OR, YL, GN]
-        max_bar_w = max(half - 1 - 29, 4)
+        Llw  = max(len(x) for x in lvl_labels)      # equal-width labels
+        Lcw  = 5
+        Lpw  = 8
+        Lbar = max(lw - 5 - Llw - Lcw - Lpw, 0)
+        lvl_max = max(max(lvl_b), 1)
 
-        hdr_bar_w = max(half - 22, 4)
-        lvl_hdr_bar = OR + '━' * hdr_bar_w + RST
+        def _lrow(icon, label, value, vcol):
+            return f'  {DIM}{_pad(f"{icon} {label}", 15)}{RST} {vcol}{value}{RST}'
 
         lvl_rows = []
         for i, (lb, cnt) in enumerate(zip(lvl_labels, lvl_b)):
             p = cnt / lvl_total_n * 100
-            bar_len = int(cnt / max(max(lvl_b), 1) * max_bar_w)
-            bar_fill = lvl_colors[i] + '━' * bar_len + RST + DIM + '─' * (max_bar_w - bar_len) + RST
-            lvl_rows.append(f'   {WH}{lb}{RST}  {WH}{cnt:>3d}{RST} {DIM}({p:5.1f}%){RST} {bar_fill}')
+            seg = f'  {WH}{_pad(lb, Llw)}{RST} {WH}{_rj(str(cnt), Lcw)}{RST} {DIM}{_rj(f"({p:.1f}%)", Lpw)}{RST}'
+            if Lbar >= 4:
+                seg += ' ' + _bar(cnt / lvl_max, Lbar, lvl_colors[i])
+            lvl_rows.append(seg)
 
         lvl_rows.append('')
-        lvl_rows.append(f'   {DIM}◆{RST} {DIM}Peak Shell{RST}       {YL}{hcs:>8,}{RST}')
-        lvl_rows.append(f'   {DIM}◆{RST} {DIM}Peak Clean{RST}       {GN}{"Lv " + str(hcl):>8s}{RST}')
-        lvl_rows.append(f'   {DIM}○{RST} {DIM}Peak Not Cln{RST}     {YL}{"Lv " + str(hnl):>8s}{RST}')
+        lvl_rows.append(_lrow('◆', 'Peak Shell',   f'{hcs:,}',  YL))
+        lvl_rows.append(_lrow('◆', 'Peak Clean',   f'Lv {hcl}', GN))
+        lvl_rows.append(_lrow('○', 'Peak Not Cln', f'Lv {hnl}', YL))
 
         if top_hits:
             lvl_rows.append('')
             lvl_rows.append(f' {AM}│{RST} {AM}TOP HITS (Lv 100+){RST}')
             for lvl, acct, tag, is_cln in top_hits[:3]:
                 tc = GN if is_cln else YL
-                lvl_rows.append(f'   {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
+                lvl_rows.append(f'  {CY}{_pad("Lv " + str(lvl), 8)}{RST} {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
 
         feed_rows = []
         feed_text_w = max(IW - half - 1 - 13, 8)
@@ -1201,12 +1261,21 @@ class BulkLiveDashboard:
                 mark = f'{RD}✖{RST}'
                 text = f'{DIM}{acct}{RST}  {RD}{reason}{RST}'
             text, _ = _trunc(text, feed_text_w)
-            feed_rows.append(f'   {DIM}{num:>5d}{RST} {mark}  {text}')
+            feed_rows.append(f'  {DIM}{_rj(str(num), 6)}{RST} {mark} {text}')
 
-        sec2_hdr = _lr(
-            f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
-            f' {AM}│{RST} {AM}LIVE FEED{RST}')
-        sec2 = [sec2_hdr]
+        # headers + heavy rules (summary style)
+        lvl_col_hdr = f'  {DIM}{_pad("Range", Llw)} {_rj("Count", Lcw)} {_rj("%", Lpw)}{RST}'
+        if Lbar >= 4:
+            lvl_col_hdr += f' {DIM}{_pad("Visual", Lbar)}{RST}'
+        lvl_rule  = f'  {DIM}{HH * max(lw - 2, 1)}{RST}'
+        feed_hdr  = f'  {DIM}{_rj("#", 6)} Account{RST}'
+        feed_rule = f'  {DIM}{HH * max(rw - 2, 1)}{RST}'
+
+        sec2 = [
+            _lr(f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}', f' {AM}│{RST} {AM}LIVE FEED{RST}'),
+            _lr(lvl_col_hdr, feed_hdr),
+            _lr(lvl_rule,    feed_rule),
+        ]
         mr = max(len(lvl_rows), len(feed_rows))
         for i in range(mr):
             left  = lvl_rows[i]  if i < len(lvl_rows)  else ''
