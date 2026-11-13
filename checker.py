@@ -1020,8 +1020,8 @@ class BulkLiveDashboard:
         WH  = E + '[97m'     # white — text
         DIM = E + '[2m'
         OR  = E + '[96m'     # cyan — level bars
-        BRD = E + '[37m'     # neutral white — frame (recedes, lets data pop)
-        BRDd= E + '[2m'      # dim — inner lines / bar tracks
+        BRD = E + '[90m'     # quiet gray — frame (recedes; content carries color)
+        BRDd= E + '[90m'     # gray — inner lines / bar tracks
         RST = E + '[0m'
 
         def _fmt(secs):
@@ -1086,7 +1086,7 @@ class BulkLiveDashboard:
         top_border = f'{BRD}╭{H * IW}╮{RST}'
         bot_border = f'{BRD}╰{H * IW}╯{RST}'
 
-        hdr_l = f' {AM}◆{RST} {AM}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
+        hdr_l = f' {YL}◆{RST} {YL}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
         hdr_r = f'{GN}●{RST} {GN}ACTIVE{RST}  {DIM}·{RST}  {WH}{clock}{RST} '
         hdr_gap = max(IW - V(hdr_l) - V(hdr_r), 1)
         hdr_row = f'{BRD}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}│{RST}'
@@ -1111,7 +1111,7 @@ class BulkLiveDashboard:
         def _cell(val, label, sub, cwidth):
             return [
                 _ctr(_clip(f'{WH}{val}{RST}', cwidth), cwidth),
-                _ctr(_clip(f'{DIM}{label}{RST}', cwidth), cwidth),
+                _ctr(_clip(f'{CY}{label}{RST}', cwidth), cwidth),
                 _ctr(_clip(sub, cwidth), cwidth),
             ]
 
@@ -1173,49 +1173,47 @@ class BulkLiveDashboard:
         ip_col = GN if ip_ok else RD
 
         sec1 = [
-            _lr(f' {AM}│{RST} {AM}ACCOUNT RESULTS{RST}',
-                f' {AM}│{RST} {AM}SYSTEM{RST}'),
-            _lr(f'   {GN}▸{RST} {GN}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
-                f'   {DIM}◇{RST} {DIM}Threads{RST}     {WH}{thr_val}{RST}'),
-            _lr(f'   {RD}▸{RST} {RD}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
-                f'   {GN}●{RST} {DIM}IP Status{RST}   {ip_col}{ip_val}{RST}'),
-            _lr(f'   {GN}◆{RST} {GN}Clean{RST}        {GN}{clean:>8,}{RST}  {DIM}{cp}{RST}',
-                f'   {DIM}▸{RST} {DIM}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
-            _lr(f'   {YL}◇{RST} {YL}Not Clean{RST}    {YL}{nc:>8,}{RST}  {DIM}{np_s}{RST}',
-                f'   {DIM}◆{RST} {DIM}CPM{RST}         {WH}{cpm:.0f}{RST}'),
-            _lr(f'   {TL}●{RST} {TL}CODM{RST}         {TL}{codm_count:>8,}{RST}  {DIM}{dp}{RST}',
-                f'   {DIM}◇{RST} {DIM}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
-            _lr(f'   {PK}○{RST} {PK}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {DIM}{ndp}{RST}',
-                f'   {DIM}○{RST} {DIM}ETA{RST}         {CY}{eta_str}{RST}'),
+            _lr(f' {CY}│{RST} {WH}ACCOUNT RESULTS{RST}',
+                f' {CY}│{RST} {WH}SYSTEM{RST}'),
+            _lr(f'   {GN}▸{RST} {WH}Valid{RST}        {GN}{valid:>8,}{RST}  {GN}{vp}{RST}',
+                f'   {CY}◇{RST} {CY}Threads{RST}     {WH}{thr_val}{RST}'),
+            _lr(f'   {RD}▸{RST} {WH}Invalid{RST}      {RD}{invalid:>8,}{RST}  {RD}{ip_s}{RST}',
+                f'   {CY}●{RST} {CY}IP Status{RST}   {ip_col}{ip_val}{RST}'),
+            _lr(f'   {GN}◆{RST} {WH}Clean{RST}        {GN}{clean:>8,}{RST}  {GN}{cp}{RST}',
+                f'   {CY}▸{RST} {CY}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
+            _lr(f'   {YL}◇{RST} {WH}Not Clean{RST}    {YL}{nc:>8,}{RST}  {YL}{np_s}{RST}',
+                f'   {CY}◆{RST} {CY}CPM{RST}         {WH}{cpm:.0f}{RST}'),
+            _lr(f'   {TL}●{RST} {WH}CODM{RST}         {TL}{codm_count:>8,}{RST}  {TL}{dp}{RST}',
+                f'   {CY}◇{RST} {CY}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
+            _lr(f'   {PK}○{RST} {WH}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {PK}{ndp}{RST}',
+                f'   {CY}○{RST} {CY}ETA{RST}         {CY}{eta_str}{RST}'),
         ]
 
         # ═══ SECTION 2: LEVELS & PEAKS | LIVE FEED ═══
         lvl_total_n = sum(lvl_b) or 1
         lvl_labels = ['Lv  1-100', 'Lv 101-200', 'Lv 201-349', 'Lv  350+']
-        lvl_colors = [OR, OR, OR, OR]
+        lvl_colors = [CY, CY, CY, CY]
+        lvl_pct_c  = [GN, PK, PK, DIM]
         max_bar_w = max(half - 1 - 29, 4)
-
-        hdr_bar_w = max(half - 22, 4)
-        lvl_hdr_bar = AM + '━' * hdr_bar_w + RST
 
         lvl_rows = []
         for i, (lb, cnt) in enumerate(zip(lvl_labels, lvl_b)):
             p = cnt / lvl_total_n * 100
             bar_len = int(cnt / max(max(lvl_b), 1) * max_bar_w)
             bar_fill = lvl_colors[i] + '━' * bar_len + RST + BRDd + '─' * (max_bar_w - bar_len) + RST
-            lvl_rows.append(f'   {WH}{lb}{RST}  {WH}{cnt:>3d}{RST} {DIM}({p:5.1f}%){RST} {bar_fill}')
+            lvl_rows.append(f'   {CY}◇{RST} {WH}{lb}{RST}  {WH}{cnt:>3d}{RST} {lvl_pct_c[i]}({p:5.1f}%){RST} {bar_fill}')
 
         lvl_rows.append('')
-        lvl_rows.append(f'   {DIM}◆{RST} {DIM}Peak Shell{RST}       {YL}{hcs:>8,}{RST}')
-        lvl_rows.append(f'   {DIM}◆{RST} {DIM}Peak Clean{RST}       {GN}{"Lv " + str(hcl):>8s}{RST}')
-        lvl_rows.append(f'   {DIM}○{RST} {DIM}Peak Not Cln{RST}     {YL}{"Lv " + str(hnl):>8s}{RST}')
+        lvl_rows.append(f'   {CY}◆{RST} {CY}Peak Shell{RST}       {YL}{hcs:>8,}{RST}')
+        lvl_rows.append(f'   {CY}◆{RST} {CY}Peak Clean{RST}       {GN}{"Lv " + str(hcl):>8s}{RST}')
+        lvl_rows.append(f'   {CY}○{RST} {CY}Peak Not Cln{RST}     {YL}{"Lv " + str(hnl):>8s}{RST}')
 
         if top_hits:
             lvl_rows.append('')
-            lvl_rows.append(f' {AM}│{RST} {AM}TOP HITS (Lv 100+){RST}')
+            lvl_rows.append(f' {YL}│{RST} {YL}TOP HITS (Lv 100+){RST}')
             for lvl, acct, tag, is_cln in top_hits[:3]:
-                tc = GN if is_cln else YL
-                lvl_rows.append(f'   {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
+                tc = GN if is_cln else WH
+                lvl_rows.append(f'   {tc}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
 
         feed_rows = []
         feed_text_w = max(IW - half - 1 - 13, 8)
@@ -1234,8 +1232,8 @@ class BulkLiveDashboard:
             feed_rows.append(f'   {DIM}{num:>5d}{RST} {mark}  {text}')
 
         sec2_hdr = _lr(
-            f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
-            f' {AM}│{RST} {AM}LIVE FEED{RST}')
+            f' {CY}│{RST} {WH}LEVELS & PEAKS{RST}',
+            f' {PK}│{RST} {PK}LIVE FEED{RST}')
         sec2 = [sec2_hdr]
         mr = max(len(lvl_rows), len(feed_rows))
         for i in range(mr):
