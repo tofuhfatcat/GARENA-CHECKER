@@ -1019,8 +1019,8 @@ class BulkLiveDashboard:
         WH  = E + '[1;97m'
         DIM = E + '[2m'
         OR  = E + '[38;2;255;176;32m'   # soft amber (sparingly)
-        BRD = E + '[38;2;255;215;80m'   # gold — solid frame
-        BRDd= E + '[38;2;120;100;40m'   # dim gold — muted lines / bar tracks
+        BRD = E + '[38;2;196;164;76m'   # muted antique gold — frame (present, not loud)
+        BRDd= E + '[38;2;110;92;42m'    # deep dim gold — inner lines / bar tracks
         RST = E + '[0m'
 
         def _fmt(secs):
@@ -5041,7 +5041,7 @@ def display_main_menu():
 
     tw = _tw()
     w  = min(tw - 4, 76)
-    sep = f'  \033[38;2;120;100;40m{"─" * w}{R}'
+    sep = f'  \033[38;2;110;92;42m{"─" * w}{R}'
 
     def _sec(title, c):
         print(f'  {c}│{R} {c}{title}{R}')
@@ -5119,7 +5119,7 @@ def display_banner():
         return ' ' * (pad // 2) + s
 
     w = min(tw - 4, 76)
-    sep = f'  \033[38;2;120;100;40m{"─" * w}{R}'
+    sep = f'  \033[38;2;110;92;42m{"─" * w}{R}'
 
     print()
     print(sep)
