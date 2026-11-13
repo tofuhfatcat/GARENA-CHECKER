@@ -1220,7 +1220,7 @@ class ResultsManager:
     def __init__(self, combo_file_path, create_dirs=True):
         self.combo_file_name = Path(combo_file_path).stem
         self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.base_dir = Path(f'Results/{self.combo_file_name}_{self.timestamp}')
+        self.base_dir = Path(f'Results/{self.combo_file_name}')
         if create_dirs:
             for sub in ('Country', 'Level', 'Garena Shells'):
                 (self.base_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -1263,32 +1263,32 @@ class ResultsManager:
             if os.path.exists(filepath):
                 with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
                     content = f.read()
-                raw_entries = content.strip().split('\n' + '-' * 60 + '\n')
+                raw_entries = content.strip().split('\n' + '=' * 60 + '\n')
                 for raw_entry in raw_entries:
                     raw_entry = raw_entry.strip()
                     if raw_entry:
-                        if raw_entry.startswith('-' * 60):
-                            raw_entry = raw_entry[len('-' * 60):].strip()
-                        if raw_entry.endswith('-' * 60):
-                            raw_entry = raw_entry[:-len('-' * 60)].strip()
+                        if raw_entry.startswith('=' * 60):
+                            raw_entry = raw_entry[len('=' * 60):].strip()
+                        if raw_entry.endswith('=' * 60):
+                            raw_entry = raw_entry[:-len('=' * 60)].strip()
                         entries.append(raw_entry)
             new_entry = new_entry_body.strip()
-            if new_entry.startswith('-' * 60):
-                new_entry = new_entry[len('-' * 60):].strip()
-            if new_entry.endswith('-' * 60):
-                new_entry = new_entry[:-len('-' * 60)].strip()
+            if new_entry.startswith('=' * 60):
+                new_entry = new_entry[len('=' * 60):].strip()
+            if new_entry.endswith('=' * 60):
+                new_entry = new_entry[:-len('=' * 60)].strip()
             entries.append(new_entry)
-            
+
             if sort_by == 'shell':
                 entries.sort(key=self._entry_shell, reverse=True)
             else:
                 entries.sort(key=self._entry_level, reverse=True)
-            
+
             with open(filepath, 'w', encoding='utf-8', errors='replace') as f:
                 for i, entry in enumerate(entries):
-                    f.write('-' * 60 + '\n')
+                    f.write('=' * 60 + '\n')
                     f.write(entry.strip())
-                    f.write('\n' + '-' * 60)
+                    f.write('\n' + '=' * 60)
                     if i < len(entries) - 1:
                         f.write('\n\n')
 
@@ -1315,12 +1315,12 @@ class ResultsManager:
         acct = account_data.get('account', 'N/A')
         pwd = account_data.get('password', 'N/A')
         if account_data.get('is_error'):
-            return '-' * 60 + f"\nAccount: {acct} : {pwd}\nError: {account_data.get('error_reason', 'Unknown')}\n" + '-' * 60
+            return '=' * 60 + f"\nAccount: {acct}:{pwd}\nError: {account_data.get('error_reason', 'Unknown')}\n" + '=' * 60
         is_clean = account_data.get('is_clean', False)
         has_codm = account_data.get('has_codm', False)
-        
+
         base_lines = [
-            '-' * 60, f'Account: {acct} : {pwd}', f'UID: {account_data.get("uid", "N/A")}',
+            '=' * 60, f'Account: {acct}:{pwd}', f'UID: {account_data.get("uid", "N/A")}',
             f'Username: {self._ascii(account_data.get("username", "N/A"))}',
             f'Garena Shell: {account_data.get("shell_balance", 0)}',
             f'Email: {account_data.get("email_display", "N/A")}',
@@ -1337,7 +1337,7 @@ class ResultsManager:
             f'Last Login IP: {account_data.get("last_login_ip", "N/A")}',
             f'Last Login Country: {account_data.get("last_login_country", "N/A")}',
             '', f'Account Status: {("Clean" if is_clean else "Not Clean")}',
-            '', '✦  Powered by: @dvlist  ✦', '-' * 60
+            '', 'Powered by: @Dvlist', '=' * 60
         ]
         
         if not has_codm:
@@ -1365,34 +1365,33 @@ class ResultsManager:
         has_codm = account_data.get('has_codm', False)
         is_clean = account_data.get('is_clean', False)
         shell = int(account_data.get('shell_balance', 0) or 0)
-        timestamp = self.timestamp
-        
-        self._write_sorted(self.base_dir / f'All_Accounts_{timestamp}.txt', entry)
-        self._append_line(self.base_dir / f'Valid_Accounts_{timestamp}.txt', combo)
-        
+
+        self._write_sorted(self.base_dir / 'All Accounts.txt', entry)
+        self._append_line(self.base_dir / 'Valid Accounts.txt', combo)
+
         if is_clean and has_codm:
-            self._write_sorted(self.base_dir / f'Clean_Accounts_{timestamp}.txt', entry)
+            self._write_sorted(self.base_dir / 'Clean Accounts.txt', entry)
         elif has_codm:
-            self._write_sorted(self.base_dir / f'Not_Clean_Accounts_{timestamp}.txt', entry)
-        
+            self._write_sorted(self.base_dir / 'Not Clean Accounts.txt', entry)
+
         if not has_codm:
-            self._write_sorted(self.base_dir / f'NO_CODM_Accounts_{timestamp}.txt', entry)
+            self._write_sorted(self.base_dir / 'No CODM Accounts.txt', entry)
             if shell > 0:
-                self._write_sorted(self.base_dir / 'Garena Shells' / f'NO_CODM_Shells_{timestamp}.txt', entry, sort_by='shell')
+                self._write_sorted(self.base_dir / 'Garena Shells' / 'No CODM Shells.txt', entry, sort_by='shell')
             return
-        
+
         country = str(account_data.get('country', 'XX') or 'XX').strip().upper()
-        self._write_sorted(self.base_dir / 'Country' / f'{country}_Accounts_{timestamp}.txt', entry)
-        
+        self._write_sorted(self.base_dir / 'Country' / f'{country} Accounts.txt', entry)
+
         try:
             lvl = int(account_data.get('codm_level', 0) or 0)
         except (ValueError, TypeError):
             lvl = 0
-        bucket = '1-100_{timestamp}.txt' if lvl <= 100 else '101-200_{timestamp}.txt' if lvl <= 200 else '201-350_{timestamp}.txt' if lvl <= 350 else '351-400_{timestamp}.txt'
+        bucket = '1-100.txt' if lvl <= 100 else '101-200.txt' if lvl <= 200 else '201-350.txt' if lvl <= 350 else '351-400.txt'
         self._write_sorted(self.base_dir / 'Level' / bucket, entry)
-        
+
         if shell > 0:
-            self._write_sorted(self.base_dir / 'Garena Shells' / f'CODM_Shells_{timestamp}.txt', entry, sort_by='shell')
+            self._write_sorted(self.base_dir / 'Garena Shells' / 'CODM Shells.txt', entry, sort_by='shell')
 
 _SCRIPT_DIR_COOKIE = os.path.dirname(os.path.abspath(__file__))
 _TG_HOOK = None
