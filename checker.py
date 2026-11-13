@@ -1019,6 +1019,8 @@ class BulkLiveDashboard:
         WH  = E + '[1;97m'
         DIM = E + '[2m'
         OR  = E + '[38;2;255;176;32m'   # soft amber (sparingly)
+        BRD = E + '[38;2;255;215;80m'   # gold — solid frame
+        BRDd= E + '[38;2;120;100;40m'   # dim gold — muted lines / bar tracks
         RST = E + '[0m'
 
         def _fmt(secs):
@@ -1073,20 +1075,20 @@ class BulkLiveDashboard:
             vl = V(content)
             if vl > IW:
                 t, tv = _trunc(content, IW)
-                return f'{DIM}│{RST}' + t + ' ' * max(IW - tv, 0) + f'{DIM}│{RST}'
-            return f'{DIM}│{RST}' + _pad(content, IW) + f'{DIM}│{RST}'
+                return f'{BRD}│{RST}' + t + ' ' * max(IW - tv, 0) + f'{BRD}│{RST}'
+            return f'{BRD}│{RST}' + _pad(content, IW) + f'{BRD}│{RST}'
 
         def _pct(n, d):
             return f'({n/d*100:.1f}%)' if d else '(0.0%)'
 
         # ═══ OUTER BORDER + HEADER + STAT TABLE (one connected box) ═══
-        top_border = f'{DIM}╭{H * IW}╮{RST}'
-        bot_border = f'{DIM}╰{H * IW}╯{RST}'
+        top_border = f'{BRD}╭{H * IW}╮{RST}'
+        bot_border = f'{BRD}╰{H * IW}╯{RST}'
 
         hdr_l = f' {AM}◆{RST} {AM}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
         hdr_r = f'{GN}●{RST} {GN}ACTIVE{RST}  {DIM}·{RST}  {WH}{clock}{RST} '
         hdr_gap = max(IW - V(hdr_l) - V(hdr_r), 1)
-        hdr_row = f'{DIM}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{DIM}│{RST}'
+        hdr_row = f'{BRD}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}│{RST}'
 
         # Stat table — separate thick box inside outer border
         ncols = 5
@@ -1113,11 +1115,11 @@ class BulkLiveDashboard:
             ]
 
         cells = [_cell(v, l, sb, widths[i]) for i, (v, l, sb) in enumerate(stat_data)]
-        st_top = f' {DIM}┏{HH * st_inner}┓{RST}'
-        st_bot = f' {DIM}┗{HH * st_inner}┛{RST}'
+        st_top = f' {BRD}┏{HH * st_inner}┓{RST}'
+        st_bot = f' {BRD}┗{HH * st_inner}┛{RST}'
         stat_rows = []
         for ri in range(3):
-            row = f' {DIM}┃{RST}' + f'{DIM}┃{RST}'.join(cells[c][ri] for c in range(ncols)) + f'{DIM}┃{RST}'
+            row = f' {BRD}┃{RST}' + f'{BRD}┃{RST}'.join(cells[c][ri] for c in range(ncols)) + f'{BRD}┃{RST}'
             stat_rows.append(row)
 
         # ═══ PROGRESS LINE (filling bar) ═══
@@ -1125,7 +1127,7 @@ class BulkLiveDashboard:
         prog_post = f'  {WH}{done:,}{RST}{DIM}/{RST}{WH}{total:,}{RST}  {DIM}ETA{RST} {CY}{eta_str}{RST} '
         bar_w = max(IW - V(prog_pre) - V(prog_post), 10)
         fill  = int(round(bar_w * min(max(pct, 0.0), 100.0) / 100))
-        bar   = f'{GN}{"━" * fill}{RST}{DIM}{"─" * (bar_w - fill)}{RST}'
+        bar   = f'{GN}{"━" * fill}{RST}{BRDd}{"─" * (bar_w - fill)}{RST}'
         prog  = prog_pre + bar + prog_post
 
         # ═══ TWO-COLUMN HELPERS ═══
@@ -1156,7 +1158,7 @@ class BulkLiveDashboard:
         def _lr(left_text, right_text):
             lw = half - 1
             t, vis = _trunc(left_text, lw)
-            return t + ' ' * max(lw - vis, 0) + f'{DIM}│{RST}' + right_text
+            return t + ' ' * max(lw - vis, 0) + f'{BRDd}│{RST}' + right_text
 
         # ═══ SECTION 1: ACCOUNT RESULTS | SYSTEM ═══
         vp   = _pct(valid, done)
@@ -1199,7 +1201,7 @@ class BulkLiveDashboard:
         for i, (lb, cnt) in enumerate(zip(lvl_labels, lvl_b)):
             p = cnt / lvl_total_n * 100
             bar_len = int(cnt / max(max(lvl_b), 1) * max_bar_w)
-            bar_fill = lvl_colors[i] + '━' * bar_len + RST + DIM + '─' * (max_bar_w - bar_len) + RST
+            bar_fill = lvl_colors[i] + '━' * bar_len + RST + BRDd + '─' * (max_bar_w - bar_len) + RST
             lvl_rows.append(f'   {WH}{lb}{RST}  {WH}{cnt:>3d}{RST} {DIM}({p:5.1f}%){RST} {bar_fill}')
 
         lvl_rows.append('')
@@ -5039,7 +5041,7 @@ def display_main_menu():
 
     tw = _tw()
     w  = min(tw - 4, 76)
-    sep = f'  {DM}{"─" * w}{R}'
+    sep = f'  \033[38;2;120;100;40m{"─" * w}{R}'
 
     def _sec(title, c):
         print(f'  {c}│{R} {c}{title}{R}')
@@ -5117,7 +5119,7 @@ def display_banner():
         return ' ' * (pad // 2) + s
 
     w = min(tw - 4, 76)
-    sep = f'  {DM}{"─" * w}{R}'
+    sep = f'  \033[38;2;120;100;40m{"─" * w}{R}'
 
     print()
     print(sep)
