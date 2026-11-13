@@ -739,7 +739,7 @@ class LiveStats:
             console.print(Panel(games_table, border_style="#ffaa00", box=ROUNDED, padding=(0, 1)))
 
         footer_text = Text()
-        footer_text.append("◈  Powered by @dvlist", style="bold #ffaa00")
+        footer_text.append("◈  Powered by @dvlist", style="bold #ffd750")
         console.print(Panel(Align.center(footer_text), border_style="#ffd750", box=ROUNDED, padding=(0, 1)))
         console.print()
 
@@ -1009,14 +1009,16 @@ class BulkLiveDashboard:
         top_hits = s.get('top_hits', [])
 
         E   = '\x1b'
-        AM  = E + '[38;2;255;170;0m'
-        CY  = E + '[38;2;255;215;80m'
-        GN  = E + '[1;92m'
-        RD  = E + '[1;91m'
-        YL  = E + '[1;93m'
+        AM  = E + '[38;2;255;215;80m'   # gold — titles / brand / frames
+        CY  = E + '[38;2;56;217;200m'   # teal — cool accent (ETA, tags)
+        GN  = E + '[38;2;74;222;128m'   # green — valid / clean
+        RD  = E + '[38;2;255;93;108m'   # red — invalid
+        YL  = E + '[38;2;255;214;61m'   # yellow — not clean
+        TL  = E + '[38;2;56;217;200m'   # teal — CODM / info
+        PK  = E + '[38;2;255;121;198m'  # pink — no CODM / accent
         WH  = E + '[1;97m'
         DIM = E + '[2m'
-        OR  = E + '[38;2;255;140;0m'
+        OR  = E + '[38;2;255;176;32m'   # soft amber (sparingly)
         RST = E + '[0m'
 
         def _fmt(secs):
@@ -1081,7 +1083,7 @@ class BulkLiveDashboard:
         top_border = f'{DIM}╭{H * IW}╮{RST}'
         bot_border = f'{DIM}╰{H * IW}╯{RST}'
 
-        hdr_l = f' {AM}◆{RST} {AM}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {AM}@dvlist{RST}'
+        hdr_l = f' {AM}◆{RST} {AM}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
         hdr_r = f'{GN}●{RST} {GN}ACTIVE{RST}  {DIM}·{RST}  {WH}{clock}{RST} '
         hdr_gap = max(IW - V(hdr_l) - V(hdr_r), 1)
         hdr_row = f'{DIM}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{DIM}│{RST}'
@@ -1157,26 +1159,6 @@ class BulkLiveDashboard:
             return t + ' ' * max(lw - vis, 0) + f'{DIM}│{RST}' + right_text
 
         # ═══ SECTION 1: ACCOUNT RESULTS | SYSTEM ═══
-        lw = half - 1                       # left-panel width (matches _lr)
-        rw = IW - half                      # right-panel width
-        # Responsive column widths — derived from the live panel width, applied
-        # uniformly so columns always align regardless of terminal size.
-        L_lbl = min(max(lw // 4, 10), 13)   # icon + name
-        L_cnt = 7                           # count (right)
-        L_pct = 8                           # (100.0%)
-        L_bar = max(lw - 5 - L_lbl - L_cnt - L_pct, 0)
-        R_lbl = min(max(rw // 3, 10), 13)
-
-        def _arow(icon, name, color, count, pct_str, frac):
-            lbl = _pad(f'{icon} {name}', L_lbl)
-            seg = f'  {color}{lbl}{RST} {color}{_rj(count, L_cnt)}{RST} {DIM}{_rj(pct_str, L_pct)}{RST}'
-            if L_bar >= 4:
-                seg += ' ' + _bar(frac, L_bar, color)
-            return seg
-
-        def _sysrow(icon, label, value, vcol):
-            return f'  {DIM}{_pad(f"{icon} {label}", R_lbl)}{RST} {vcol}{value}{RST}'
-
         vp   = _pct(valid, done)
         ip_s = _pct(invalid, done)
         cp   = _pct(clean, valid)
@@ -1186,67 +1168,51 @@ class BulkLiveDashboard:
 
         ip_val = 'CLEAR' if ip_ok else 'BLOCKED'
         ip_col = GN if ip_ok else RD
-        base = done or 1
-
-        # header + heavy rule (summary style)
-        l_hdr = f'  {DIM}{_pad("Category", L_lbl)} {_rj("Count", L_cnt)} {_rj("%", L_pct)}{RST}'
-        if L_bar >= 4:
-            l_hdr += f' {DIM}{_pad("Visual", L_bar)}{RST}'
-        l_rule = f'  {DIM}{HH * max(lw - 2, 1)}{RST}'
-        r_hdr  = f'  {DIM}{_pad("Metric", R_lbl)} Value{RST}'
-        r_rule = f'  {DIM}{HH * max(rw - 2, 1)}{RST}'
 
         sec1 = [
             _lr(f' {AM}│{RST} {AM}ACCOUNT RESULTS{RST}',
                 f' {AM}│{RST} {AM}SYSTEM{RST}'),
-            _lr(l_hdr,  r_hdr),
-            _lr(l_rule, r_rule),
-            _lr(_arow('▸', 'Valid',     GN, f'{valid:,}',      vp,   valid/base),
-                _sysrow('◇', 'Threads',   thr_val,          WH)),
-            _lr(_arow('▸', 'Invalid',   RD, f'{invalid:,}',    ip_s, invalid/base),
-                _sysrow('●', 'IP Status', ip_val,           ip_col)),
-            _lr(_arow('◆', 'Clean',     GN, f'{clean:,}',      cp,   clean/max(valid,1)),
-                _sysrow('▸', 'Speed',     f'{rate:.1f}/s',  WH)),
-            _lr(_arow('◇', 'Not Clean', YL, f'{nc:,}',         np_s, nc/max(valid,1)),
-                _sysrow('◆', 'CPM',       f'{cpm:.0f}',     WH)),
-            _lr(_arow('●', 'CODM',      OR, f'{codm_count:,}', dp,   codm_count/max(valid,1)),
-                _sysrow('◇', 'Elapsed',   elapsed_str,      WH)),
-            _lr(_arow('○', 'No CODM',   DIM, f'{no_codm:,}',   ndp,  no_codm/max(valid,1)),
-                _sysrow('○', 'ETA',       eta_str,          CY)),
+            _lr(f'   {GN}▸{RST} {WH}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
+                f'   {DIM}◇{RST} {DIM}Threads{RST}     {WH}{thr_val}{RST}'),
+            _lr(f'   {RD}▸{RST} {WH}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
+                f'   {GN}●{RST} {DIM}IP Status{RST}   {ip_col}{ip_val}{RST}'),
+            _lr(f'   {GN}◆{RST} {WH}Clean{RST}        {GN}{clean:>8,}{RST}  {DIM}{cp}{RST}',
+                f'   {DIM}▸{RST} {DIM}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
+            _lr(f'   {YL}◇{RST} {WH}Not Clean{RST}    {YL}{nc:>8,}{RST}  {DIM}{np_s}{RST}',
+                f'   {DIM}◆{RST} {DIM}CPM{RST}         {WH}{cpm:.0f}{RST}'),
+            _lr(f'   {TL}●{RST} {WH}CODM{RST}         {TL}{codm_count:>8,}{RST}  {DIM}{dp}{RST}',
+                f'   {DIM}◇{RST} {DIM}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
+            _lr(f'   {PK}○{RST} {WH}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {DIM}{ndp}{RST}',
+                f'   {DIM}○{RST} {DIM}ETA{RST}         {CY}{eta_str}{RST}'),
         ]
 
         # ═══ SECTION 2: LEVELS & PEAKS | LIVE FEED ═══
         lvl_total_n = sum(lvl_b) or 1
-        lvl_labels = ['Lv 1-100', 'Lv 101-200', 'Lv 201-349', 'Lv 350+']
-        lvl_colors = [RD, OR, YL, GN]
-        Llw  = max(len(x) for x in lvl_labels)      # equal-width labels
-        Lcw  = 5
-        Lpw  = 8
-        Lbar = max(lw - 5 - Llw - Lcw - Lpw, 0)
-        lvl_max = max(max(lvl_b), 1)
+        lvl_labels = ['Lv  1-100', 'Lv 101-200', 'Lv 201-349', 'Lv  350+']
+        lvl_colors = [RD, OR, TL, GN]
+        max_bar_w = max(half - 1 - 29, 4)
 
-        def _lrow(icon, label, value, vcol):
-            return f'  {DIM}{_pad(f"{icon} {label}", 15)}{RST} {vcol}{value}{RST}'
+        hdr_bar_w = max(half - 22, 4)
+        lvl_hdr_bar = AM + '━' * hdr_bar_w + RST
 
         lvl_rows = []
         for i, (lb, cnt) in enumerate(zip(lvl_labels, lvl_b)):
             p = cnt / lvl_total_n * 100
-            seg = f'  {WH}{_pad(lb, Llw)}{RST} {WH}{_rj(str(cnt), Lcw)}{RST} {DIM}{_rj(f"({p:.1f}%)", Lpw)}{RST}'
-            if Lbar >= 4:
-                seg += ' ' + _bar(cnt / lvl_max, Lbar, lvl_colors[i])
-            lvl_rows.append(seg)
+            bar_len = int(cnt / max(max(lvl_b), 1) * max_bar_w)
+            bar_fill = lvl_colors[i] + '━' * bar_len + RST + DIM + '─' * (max_bar_w - bar_len) + RST
+            lvl_rows.append(f'   {WH}{lb}{RST}  {WH}{cnt:>3d}{RST} {DIM}({p:5.1f}%){RST} {bar_fill}')
 
         lvl_rows.append('')
-        lvl_rows.append(_lrow('◆', 'Peak Shell',   f'{hcs:,}',  YL))
-        lvl_rows.append(_lrow('◆', 'Peak Clean',   f'Lv {hcl}', GN))
-        lvl_rows.append(_lrow('○', 'Peak Not Cln', f'Lv {hnl}', YL))
+        lvl_rows.append(f'   {DIM}◆{RST} {DIM}Peak Shell{RST}       {YL}{hcs:>8,}{RST}')
+        lvl_rows.append(f'   {DIM}◆{RST} {DIM}Peak Clean{RST}       {GN}{"Lv " + str(hcl):>8s}{RST}')
+        lvl_rows.append(f'   {DIM}○{RST} {DIM}Peak Not Cln{RST}     {YL}{"Lv " + str(hnl):>8s}{RST}')
 
         if top_hits:
             lvl_rows.append('')
             lvl_rows.append(f' {AM}│{RST} {AM}TOP HITS (Lv 100+){RST}')
             for lvl, acct, tag, is_cln in top_hits[:3]:
                 tc = GN if is_cln else YL
-                lvl_rows.append(f'  {CY}{_pad("Lv " + str(lvl), 8)}{RST} {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
+                lvl_rows.append(f'   {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
 
         feed_rows = []
         feed_text_w = max(IW - half - 1 - 13, 8)
@@ -1261,21 +1227,12 @@ class BulkLiveDashboard:
                 mark = f'{RD}✖{RST}'
                 text = f'{DIM}{acct}{RST}  {RD}{reason}{RST}'
             text, _ = _trunc(text, feed_text_w)
-            feed_rows.append(f'  {DIM}{_rj(str(num), 6)}{RST} {mark} {text}')
+            feed_rows.append(f'   {DIM}{num:>5d}{RST} {mark}  {text}')
 
-        # headers + heavy rules (summary style)
-        lvl_col_hdr = f'  {DIM}{_pad("Range", Llw)} {_rj("Count", Lcw)} {_rj("%", Lpw)}{RST}'
-        if Lbar >= 4:
-            lvl_col_hdr += f' {DIM}{_pad("Visual", Lbar)}{RST}'
-        lvl_rule  = f'  {DIM}{HH * max(lw - 2, 1)}{RST}'
-        feed_hdr  = f'  {DIM}{_rj("#", 6)} Account{RST}'
-        feed_rule = f'  {DIM}{HH * max(rw - 2, 1)}{RST}'
-
-        sec2 = [
-            _lr(f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}', f' {AM}│{RST} {AM}LIVE FEED{RST}'),
-            _lr(lvl_col_hdr, feed_hdr),
-            _lr(lvl_rule,    feed_rule),
-        ]
+        sec2_hdr = _lr(
+            f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
+            f' {AM}│{RST} {AM}LIVE FEED{RST}')
+        sec2 = [sec2_hdr]
         mr = max(len(lvl_rows), len(feed_rows))
         for i in range(mr):
             left  = lvl_rows[i]  if i < len(lvl_rows)  else ''
@@ -1285,7 +1242,7 @@ class BulkLiveDashboard:
         # (TOP HITS moved into left column above)
 
         # ═══ BOTTOM BAR (centered) ═══
-        bot_content = f'{AM}◆{RST} {AM}@dvlist{RST} {DIM}·{RST} {CY}{pct:.1f}%{RST} {DIM}·{RST} {WH}{rate:.1f}/s{RST} {DIM}·{RST} ETA {CY}{eta_str}{RST} {DIM}·{RST} {WH}{done:,}{RST} {DIM}/ {total:,}{RST}'
+        bot_content = f'{PK}◆{RST} {PK}@dvlist{RST} {DIM}·{RST} {CY}{pct:.1f}%{RST} {DIM}·{RST} {WH}{rate:.1f}/s{RST} {DIM}·{RST} ETA {CY}{eta_str}{RST} {DIM}·{RST} {WH}{done:,}{RST} {DIM}/ {total:,}{RST}'
         bot_content = _ctr(bot_content, IW)
 
         # ═══ ASSEMBLE ═══
@@ -4290,12 +4247,12 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
     ct = max(stats['valid'], 1)
     add_row("✦ Clean", stats['clean'], ct, "green")
     add_row("⊘ Not Clean", stats['not_clean'], ct, "yellow")
-    add_row("◈ Has CODM", stats['has_codm'], ct, "cyan")
-    add_row("○ No CODM", stats['no_codm'], ct, "magenta")
+    add_row("◈ Has CODM", stats['has_codm'], ct, "#38d9c8")
+    add_row("○ No CODM", stats['no_codm'], ct, "#ff79c6")
 
     status_panel = Panel(status_table, title="🎯 [italic #ffd750]Session Results[/italic #ffd750]", border_style="#ffd750", expand=False)
 
-    level_table = Table(box=box.SIMPLE_HEAVY, border_style="blue", header_style="bold white", expand=False, show_lines=False)
+    level_table = Table(box=box.SIMPLE_HEAVY, border_style="#ffd750", header_style="bold white", expand=False, show_lines=False)
     level_table.add_column("Level Range", style="#ffd750")
     level_table.add_column("Clean", justify="right", style="green")
     level_table.add_column("Visual (Clean)", style="green")
@@ -4314,7 +4271,7 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
         n_bar = f"[yellow]{'█' * int((nc/n_tot)*15)}[/yellow]"
         level_table.add_row(f"Level {rng}", str(cc), c_bar, str(nc), n_bar)
 
-    level_panel = Panel(level_table, title="🌍 [italic blue]Level Distribution[/italic blue]", border_style="blue", expand=False)
+    level_panel = Panel(level_table, title="🌍 [italic #ffd750]Level Distribution[/italic #ffd750]", border_style="#ffd750", expand=False)
 
     console.print("\n")
     console.print(Padding(overview_panel, (0, 0, 0, 4)))
@@ -5073,47 +5030,49 @@ def proxy_diagnostic():
 
 
 def display_main_menu():
-    R  = '\033[0m'
-    AM = '\033[38;2;255;170;0m'
-    W  = '\033[1;97m'
-    DM = '\033[2m'
+    R    = '\033[0m'
+    GOLD = '\033[38;2;255;215;80m'
+    TEAL = '\033[38;2;56;217;200m'
+    PINK = '\033[38;2;255;121;198m'
+    W    = '\033[1;97m'
+    DM   = '\033[2m'
 
     tw = _tw()
     w  = min(tw - 4, 76)
     sep = f'  {DM}{"─" * w}{R}'
 
-    def _sec(title):
-        print(f'  {AM}│{R} {AM}{title}{R}')
+    def _sec(title, c):
+        print(f'  {c}│{R} {c}{title}{R}')
 
-    def _item(n, label, desc):
-        print(f'    {AM}▸{R} {W}{n:>2}{R}  {W}{label:<18s}{R}  {DM}{desc}{R}')
+    def _item(n, label, desc, c):
+        print(f'    {c}▸{R} {W}{n:>2}{R}  {W}{label:<18s}{R}  {DM}{desc}{R}')
 
     print()
-    _sec('CHECKER')
-    _item(1,  'Full Info',       'Complete account details')
-    _item(2,  'Semi Info',       'Level · Clean · Shell · Country')
-    _item(3,  'No Info',         'Fastest — Valid / Invalid only')
-    _item(4,  'Single Check',    'One account, full output')
+    _sec('CHECKER', GOLD)
+    _item(1,  'Full Info',       'Complete account details',        GOLD)
+    _item(2,  'Semi Info',       'Level · Clean · Shell · Country',  GOLD)
+    _item(3,  'No Info',         'Fastest — Valid / Invalid only',   GOLD)
+    _item(4,  'Single Check',    'One account, full output',         GOLD)
     print()
-    _sec('TOOLS')
-    _item(5,  'Log Separator',   'Separates logs by domain')
-    _item(6,  'File Splitter',   'Split lines into multiple files')
-    _item(7,  'File Merger',     'Merge multiple files into one')
-    _item(8,  'Watermark Detect','Detects if logs are leaked')
-    _item(9,  'Encryption',      'Encrypt your code')
+    _sec('TOOLS', TEAL)
+    _item(5,  'Log Separator',   'Separates logs by domain',         TEAL)
+    _item(6,  'File Splitter',   'Split lines into multiple files',  TEAL)
+    _item(7,  'File Merger',     'Merge multiple files into one',    TEAL)
+    _item(8,  'Watermark Detect','Detects if logs are leaked',       TEAL)
+    _item(9,  'Encryption',      'Encrypt your code',                TEAL)
     print()
-    _sec('GENERATORS')
-    _item(10, 'CN31 Generator',  'Fresh cn31 for ML Checker')
-    _item(11, 'CODM Generator',  'Valid lines for CODM')
-    _item(12, 'MLBB Generator',  'Valid lines for MLBB')
+    _sec('GENERATORS', PINK)
+    _item(10, 'CN31 Generator',  'Fresh cn31 for ML Checker',        PINK)
+    _item(11, 'CODM Generator',  'Valid lines for CODM',             PINK)
+    _item(12, 'MLBB Generator',  'Valid lines for MLBB',             PINK)
     print()
     print(sep)
-    print(f'  {AM}◆{R} {AM}@dvlist{R}')
+    print(f'  {GOLD}◆{R} {GOLD}@dvlist{R}')
     print()
 
     while True:
         try:
-            choice = input(f'  {AM}▸{R} Select [1-12]: ').strip()
+            choice = input(f'  {TEAL}▸{R} Select [1-12]: ').strip()
             if choice in ('1','2','3','4','5','6','7','8','9','10','11','12'):
                 return choice
             _log('ERROR', 'Enter 1-12.', '    ')
@@ -5128,8 +5087,9 @@ def display_banner():
     clear_screen()
     tw = _tw()
     R  = '\033[0m'
-    AM = '\033[38;2;255;170;0m'
-    CY = '\033[38;2;255;215;80m'
+    AM = '\033[38;2;255;215;80m'   # gold
+    CY = '\033[38;2;56;217;200m'   # teal
+    PK = '\033[38;2;255;121;198m'  # pink
     DM = '\033[2m'
     W  = '\033[1;97m'
 
@@ -5142,13 +5102,14 @@ def display_banner():
         r" ╚═╝  ╚═╝ ╚══════╝ ╚══════╝  ╚═════╝",
     ]
 
+    # gold (top) → pink (bottom): warm, vibrant, coordinated with the menu
     row_colors = [
-        (255, 190, 60,  255, 215, 100),
-        (255, 170, 20,  255, 200, 70),
-        (255, 150, 0,   255, 180, 40),
-        (255, 130, 0,   255, 160, 30),
-        (230, 110, 0,   255, 140, 20),
-        (200,  90, 0,   240, 120, 10),
+        (255, 215,  80,  255, 198, 120),
+        (255, 198, 110,  255, 174, 150),
+        (255, 178, 140,  255, 154, 175),
+        (255, 158, 165,  255, 138, 190),
+        (255, 138, 185,  255, 126, 196),
+        (255, 121, 198,  255, 121, 198),
     ]
 
     def _center(s, vis_len):
@@ -5169,7 +5130,7 @@ def display_banner():
 
     print()
 
-    left  = f'  {AM}◆{R} {AM}HESU CHECKER{R} {CY}v2.0{R}  {DM}—{R}  {AM}@dvlist{R}'
+    left  = f'  {AM}◆{R} {AM}HESU CHECKER{R} {CY}v2.0{R}  {DM}—{R}  {PK}@dvlist{R}'
     right = f'{DM}garena account checker{R}  '
     lv = len(re.sub(r'\033\[[0-9;]*m', '', left))
     rv = len(re.sub(r'\033\[[0-9;]*m', '', right))
