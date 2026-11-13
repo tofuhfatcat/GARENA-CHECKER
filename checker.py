@@ -2928,8 +2928,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
                 live_stats.push_result(success=False, error_reason='Network Error')
-                if auto_remove:
-                    _queue_auto_remove(account, password, file_manager, combo_file_path)
+                # Transient failure — the account was never actually determined,
+                # so keep it in the combo file for a re-run instead of removing it.
                 return 'ERROR'
 
             if v1 == 'NO_ACCOUNT':
@@ -2969,8 +2969,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Prelogin Failed'}
                 results_manager.add_account(account_data)
                 live_stats.push_result(success=False, error_reason='Prelogin Failed')
-                if auto_remove:
-                    _queue_auto_remove(account, password, file_manager, combo_file_path)
+                # Transient failure — keep the account for a re-run, don't remove it.
                 return 'ERROR'
 
             if new_datadome:
