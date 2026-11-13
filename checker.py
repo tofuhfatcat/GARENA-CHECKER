@@ -858,11 +858,12 @@ class BulkLiveDashboard:
                 else:
                     self.no_codm += 1
                 reason = 'CLEAN' if is_clean else 'NOT CLN'
-                self._feed.append((self._feed_counter, account.split(':')[0][:20], True, reason))
+                feed_lvl = codm_level if (has_codm and codm_level) else 0
+                self._feed.append((self._feed_counter, account.split(':')[0][:20], True, reason, feed_lvl))
             else:
                 self.invalid += 1
                 reason = error_reason[:20] if error_reason else "Account Doesn't E..."
-                self._feed.append((self._feed_counter, account.split(':')[0][:20], False, reason))
+                self._feed.append((self._feed_counter, account.split(':')[0][:20], False, reason, 0))
             if len(self._feed) > 10:
                 self._feed = self._feed[-10:]
             self._build_snap()
@@ -1170,10 +1171,13 @@ class BulkLiveDashboard:
 
         feed_rows = []
         feed_text_w = max(IW - half - 1 - 13, 8)
-        for num, acct, ok, reason in feed[-10:]:
+        for entry in feed[-10:]:
+            num, acct, ok, reason = entry[0], entry[1], entry[2], entry[3]
+            lvl = entry[4] if len(entry) > 4 else 0
+            lvl_tag = f'{CY}Lv{lvl}{RST} ' if lvl else ''
             if ok:
                 mark = f'{GN}✔{RST}'
-                text = f'{WH}{acct}{RST}  {GN}{reason}{RST}'
+                text = f'{WH}{acct}{RST}  {lvl_tag}{GN}{reason}{RST}'
             else:
                 mark = f'{RD}✖{RST}'
                 text = f'{DIM}{acct}{RST}  {RD}{reason}{RST}'
@@ -2594,8 +2598,8 @@ def display_codm_info(account, password, details, codm_info, has_codm,
     """Print a result card, then restore the pinned dashboard above/below."""
     global _active_dashboard
 
-    # In dashboard-only mode suppress output unless full mode is on
-    if _active_dashboard and _DISPLAY_MODE == 'dashboard' and _BULK_MODE != 'full':
+    # Bulk dashboard is active: the live feed covers results, so no scrolling cards
+    if _active_dashboard:
         return
 
     # ── Color shortcuts
