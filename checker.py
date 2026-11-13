@@ -266,6 +266,21 @@ def _make_session(pool_size=64):
     return s
 
 
+_codm_tls = threading.local()
+
+def _get_codm_session():
+    """Per-thread keep-alive session for the CODM sub-check.
+
+    Reused across accounts so the TLS connection to the CODM/SSO hosts stays
+    warm instead of a fresh handshake on every valid hit.
+    """
+    s = getattr(_codm_tls, 'session', None)
+    if s is None:
+        s = _make_session(pool_size=4)
+        _codm_tls.session = s
+    return s
+
+
 def sanitize_string(text):
     if not text or text == 'N/A':
         return text
@@ -3077,16 +3092,21 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             
             from concurrent.futures import ThreadPoolExecutor as _TPE
             with _TPE(max_workers=2) as _inner_ex:
-                # CODM check (uses a fresh session to avoid cookie bleed)
+                # CODM check — reuse a warm per-thread session (keep-alive),
+                # reset only the auth cookies and mirror the main proxy.
                 def _do_codm():
-                    cs = requests.Session()
+                    cs = _get_codm_session()
+                    cs.cookies.clear()
                     for cn in ['sso_key', 'apple_state_key', 'datadome']:
                         if cn in session.cookies:
                             cs.cookies.set(cn, session.cookies.get(cn), domain='.garena.com')
                     try:
-                        return check_codm_account(cs, account)
-                    finally:
-                        cs.close()
+                        cs.proxies.clear()
+                        if session.proxies:
+                            cs.proxies.update(session.proxies)
+                    except Exception:
+                        pass
+                    return check_codm_account(cs, account)
                 
                 codm_fut = _inner_ex.submit(_do_codm)
                 
