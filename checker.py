@@ -2173,7 +2173,30 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
                 all_403 = True
                 break
             if response.status_code == 429:
-                time.sleep(0.2)
+                # rate-limited: rotate the throttled identity instead of waiting on it
+                rotated = False
+                if proxy_manager and proxy_manager.is_loaded():
+                    session.proxies.clear()
+                    session.proxies.update(proxy_manager.get_next())
+                    rotated = True
+                else:
+                    picked_ck = cookie_manager.pick_cookie()
+                    if picked_ck:
+                        applyck(session, picked_ck)
+                        val = extract_datadome_token(picked_ck)
+                        if val:
+                            datadome_manager.set_datadome(val)
+                            datadome_manager.set_session_datadome(session, val)
+                        rotated = True
+                    else:
+                        proxy_dict = dict(session.proxies) if hasattr(session, 'proxies') and session.proxies else None
+                        fresh_dd = get_datadome_cookie(session, proxies=proxy_dict)
+                        if fresh_dd:
+                            datadome_manager.set_datadome(fresh_dd)
+                            datadome_manager.set_session_datadome(session, fresh_dd)
+                            rotated = True
+                if not rotated:
+                    time.sleep(0.1)
                 continue
             response.raise_for_status()
             if _is_fake_response(response):
@@ -3265,6 +3288,11 @@ def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
                     continue
                 return (None, None, None)
             if resp.status_code == 429:
+                # rate-limited: swap in a fresh datadome token so the retry isn't throttled
+                fresh = get_datadome_cookie(session)
+                if fresh:
+                    datadome_manager.set_datadome(fresh)
+                    datadome_manager.set_session_datadome(session, fresh)
                 continue
             resp.raise_for_status()
             if _is_fake_response(resp):
