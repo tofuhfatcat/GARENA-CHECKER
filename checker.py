@@ -105,7 +105,7 @@ def _grad_str(text, r1=180, g1=0, b1=255, r2=255, g2=80, b2=200):
 
 _GRAD_VER = '\033[96m'   # warm gold (version)
 _GRAD_BY  = '\033[90m' # soft gray (by)
-_GRAD_AT  = '\033[95m'  # hot magenta (brand)
+_GRAD_AT  = '\033[38;5;139m'  # soft purple-gray
 
 
 console = Console()
@@ -496,11 +496,15 @@ class AccountFileViewer:
 
     def display_file_table(self, file_infos):
         print()
-        table = Table(box=box.SIMPLE_HEAD, header_style="bold bright_cyan", border_style="dim", padding=(0, 2))
+        table = Table(
+            title='[bold bright_cyan]📂 COMBO FILES[/bold bright_cyan]',
+            box=box.ROUNDED, header_style="bold bright_cyan",
+            border_style="bright_cyan", padding=(0, 2), title_justify='left',
+        )
         table.add_column("#", style="bold bright_cyan", justify="right", width=3)
         table.add_column("Filename", style="bold white")
-        table.add_column("Size", style="dim", justify="right")
-        table.add_column("Accounts", style="bright_white", justify="right")
+        table.add_column("Size", style="yellow", justify="right")
+        table.add_column("Accounts", style="bright_green", justify="right")
         table.add_column("", width=18)
         max_ac = max((i['account_count'] for i in file_infos)) if file_infos else 1
         for idx, info in enumerate(file_infos, 1):
@@ -513,7 +517,9 @@ class AccountFileViewer:
 
     def prompt_file_selection(self, file_infos):
         while True:
-            choice = input(f"  \033[96m>\033[0m file # or 'auto': ").strip().lower()
+            _prompt_box("[white]Enter file number or [bright_cyan]'auto'[/bright_cyan] for the largest[/white]",
+                        '❯ Select File', border='bright_cyan')
+            choice = input("    \033[96m❯\033[0m ").strip().lower()
             if choice == 'auto':
                 largest = max(file_infos, key=lambda x: x['account_count'])
                 _log('SUCCESS', f"Auto-selected: {largest['name']}")
@@ -528,15 +534,21 @@ class AccountFileViewer:
 
     def prompt_clean_file(self):
         print()
-        choice = input(f"  \033[96m>\033[0m clean file encoding? (Y/n): ").strip().lower()
+        _prompt_box('[white]Clean file encoding? (Y/n)[/white]',
+                    '❯ Encoding', border='bright_cyan')
+        choice = input("    \033[96m❯\033[0m ").strip().lower()
         return choice != 'n'
 
     def prompt_remove_duplicates(self):
-        choice = input(f"  \033[96m>\033[0m remove duplicates? (y/N): ").strip().lower()
+        _prompt_box('[white]Remove duplicate lines? (y/N)[/white]',
+                    '❯ Deduplicate', border='bright_green')
+        choice = input("    \033[92m❯\033[0m ").strip().lower()
         return choice == 'y'
 
     def prompt_auto_remove_checked(self):
-        choice = input(f"  \033[96m>\033[0m auto-remove checked? (y/N): ").strip().lower()
+        _prompt_box('[white]Auto-remove checked lines from the file? (y/N)[/white]',
+                    '❯ Auto-Remove', border='bright_yellow')
+        choice = input("    \033[93m❯\033[0m ").strip().lower()
         return choice == 'y'
 
 class LiveStats:
@@ -668,7 +680,7 @@ class LiveStats:
         tbl.add_row(f'[bright_green]✨ Clean[/bright_green]', f"[bright_green]{stats['clean']}[/bright_green]", _mb(stats['clean'], max(stats['valid'], 1), 'bright_cyan'))
         tbl.add_row(f'[yellow]⊘ Not Clean[/yellow]', f"[yellow]{stats['not_clean']}[/yellow]", _mb(stats['not_clean'], max(stats['valid'], 1), 'yellow'))
         tbl.add_row(f'[cyan]◈ CODM[/cyan]', f"[cyan]{stats['has_codm']}[/cyan]", _mb(stats['has_codm'], max(stats['valid'], 1), 'bright_cyan'))
-        tbl.add_row(f'[dim]○ No CODM[/dim]', f"[dim]{stats['no_codm']}[/dim]", _mb(stats['no_codm'], max(stats['valid'], 1), 'magenta'))
+        tbl.add_row(f'[dim]○ No CODM[/dim]', f"[dim]{stats['no_codm']}[/dim]", _mb(stats['no_codm'], max(stats['valid'], 1), 'color(139)'))
         tbl.add_row('', '', '')
         tbl.add_row(f'[dim]▲ Top Clean Lv[/dim]', f"[bold bright_green]{stats['highest_clean_level']}[/bold bright_green]", '')
         tbl.add_row(f'[dim]▲ Top Not Clean Lv[/dim]', f'[bold yellow]{self.highest_not_clean_level}[/bold yellow]', '')
@@ -703,10 +715,10 @@ class LiveStats:
         results_table.add_row("", "", "", "")
 
         vd = max(stats['valid'], 1)
-        for label, count, color in [("✨  Clean", stats['clean'], "bright_green"), ("⊘  Not Clean", stats['not_clean'], "bright_yellow"), ("◈  Has CODM", stats['has_codm'], "cyan"), ("○  No CODM", stats['no_codm'], "magenta")]:
+        for label, count, color in [("✨  Clean", stats['clean'], "bright_green"), ("⊘  Not Clean", stats['not_clean'], "bright_yellow"), ("◈  Has CODM", stats['has_codm'], "cyan"), ("○  No CODM", stats['no_codm'], "color(139)")]:
             results_table.add_row(f"[{color}]{label}[/{color}]", f"[{color}]{count:,}[/{color}]", self._rich_pct(count, vd), self._rich_bar(count, vd, color, 20))
 
-        console.print(Panel(results_table, border_style="bright_cyan", box=HEAVY, padding=(0, 1)))
+        console.print(Panel(results_table, border_style="bright_cyan", box=ROUNDED, padding=(0, 1)))
 
         stats_table = Table(title="[bold bright_yellow]◈ SESSION STATS[/bold bright_yellow]", box=ROUNDED, border_style="bright_yellow", show_header=False, padding=(0, 2), expand=False)
         stats_table.add_column(style="dim", width=16, no_wrap=True)
@@ -3681,7 +3693,7 @@ def validator_check():
         f2 = int(cnt / denom * bw)
         return f"[{color}]{'█' * f2}[/{color}][dim]{'░' * (bw - f2)}[/dim]"
     
-    results_table = Table(title="[bold bright_yellow]⬡  VALIDATOR COMPLETE[/bold bright_yellow]", box=box.HEAVY, border_style="bright_yellow", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
+    results_table = Table(title="[bold bright_yellow]⬡  VALIDATOR COMPLETE[/bold bright_yellow]", box=box.ROUNDED, border_style="bright_yellow", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
     results_table.add_column("Category", style="dim", no_wrap=True, width=14)
     results_table.add_column("Count", justify="right", style="bright_white", width=10)
     results_table.add_column("Pct", justify="right", style="bright_yellow", width=8)
@@ -4342,7 +4354,7 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
     add_row("✦ Clean", stats['clean'], ct, "green")
     add_row("⊘ Not Clean", stats['not_clean'], ct, "yellow")
     add_row("◈ Has CODM", stats['has_codm'], ct, "#38d9c8")
-    add_row("○ No CODM", stats['no_codm'], ct, "magenta")
+    add_row("○ No CODM", stats['no_codm'], ct, "color(139)")
 
     status_panel = Panel(status_table, title="🎯 [italic cyan]Session Results[/italic cyan]", border_style="cyan", expand=False)
 
@@ -4380,12 +4392,12 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
     gc = stats.get('game_counts', {})
     active_games = [(label, gc.get(key, 0)) for key, label in GAME_DISPLAY_NAMES if gc.get(key, 0) > 0]
     if active_games:
-        games_table = Table(box=box.SIMPLE_HEAVY, border_style="magenta", show_header=False)
+        games_table = Table(box=box.SIMPLE_HEAVY, border_style="bright_cyan", show_header=False)
         games_table.add_column("Game", style="dim")
         games_table.add_column("Count", style="cyan bold")
         for label, count in active_games:
             games_table.add_row(label, str(count))
-        games_panel = Panel(games_table, title="🎮 [italic magenta]Games Found[/italic magenta]", border_style="magenta", expand=False)
+        games_panel = Panel(games_table, title="🎮 [italic color(139)]Games Found[/italic color(139)]", border_style="color(139)", expand=False)
         console.print(Padding(games_panel, (0, 0, 0, 4)))
 
     console.print(Padding(Text.from_markup("[cyan]◈  Powered by @dvlist[/cyan]"), (1, 0, 1, 6)))
@@ -4446,7 +4458,7 @@ def bulk_check(bulk_mode: str = 'full'):
         file_table.add_column(style='bright_white', no_wrap=True)
         file_table.add_row('File', f'[cyan]{Path(selected_file).name}[/cyan]')
         file_table.add_row('Accounts', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
-        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='bright_green', box=box.HEAVY, padding=(0, 2), expand=False, width=60))
+        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='bright_green', box=box.ROUNDED, padding=(0, 2), expand=False, width=60))
     except Exception:
         _log('ERROR', 'Could not read file.')
         return
@@ -4458,7 +4470,7 @@ def bulk_check(bulk_mode: str = 'full'):
     info_table.add_column(style='bright_white', no_wrap=True)
     info_table.add_row('Total Queued', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
     info_table.add_row('Status', '[bright_green]Ready[/bright_green]')
-    console.print(Panel(info_table, title='[bold bright_green]ℹ ACCOUNT QUEUE[/bold bright_green]', border_style='bright_green', box=box.HEAVY, padding=(0, 2), expand=False, width=50))
+    console.print(Panel(info_table, title='[bold bright_green]ℹ ACCOUNT QUEUE[/bold bright_green]', border_style='bright_green', box=box.ROUNDED, padding=(0, 2), expand=False, width=50))
     results_manager = ResultsManager(selected_file)
     cookie_manager = CookieManager()
     datadome_manager = DataDomeManager()
@@ -4480,7 +4492,7 @@ def bulk_check(bulk_mode: str = 'full'):
                 f'[dim]default:[/dim] [bold white]{DEFAULT_THREADS}[/bold white]   '
                 f'[dim]max:[/dim] [bold white]{max_threads}[/bold white]')
     _prompt_box(_tc_body, '◆ THREAD CONFIG',
-                border='bright_yellow', box_style=box.HEAVY)
+                border='bright_yellow', box_style=box.ROUNDED)
     while True:
         try:
             raw = input(f"    \033[93m❯\033[0m threads 1-{max_threads} \033[2m(enter={DEFAULT_THREADS})\033[0m: ").strip()
@@ -4497,7 +4509,7 @@ def bulk_check(bulk_mode: str = 'full'):
                 '[dim]AOV / ROV / Free Fire / Delta Force…[/dim]\n'
                 '[dim]Saves each game to a separate file  ·  ~1-3s/account[/dim]')
     _prompt_box(_og_body, '◇ OTHER GAMES',
-                border='cyan', box_style=box.HEAVY)
+                border='cyan', box_style=box.ROUNDED)
     CHECK_OTHER_GAMES = input("    \033[96m❯\033[0m check other games? (y/N): ").strip().lower() == "y"
     _log("SUCCESS" if CHECK_OTHER_GAMES else "INFO", "Will scan all Garena game connections" if CHECK_OTHER_GAMES else f"{_DIM}CODM only — skipping other game checks{_RST}")
     print()
@@ -4526,7 +4538,7 @@ def bulk_check(bulk_mode: str = 'full'):
                 '[bold white]3[/bold white]  [bright_cyan]›[/bright_cyan]  Send Both (clean + not-clean)\n'
                 '[bold white]4[/bold white]  [dim]›[/dim]  No Telegram (skip)')
     _prompt_box(_tg_body, '⬡ TELEGRAM NOTIFICATION SETUP',
-                border='bright_green', box_style=box.HEAVY)
+                border='bright_green', box_style=box.ROUNDED)
     tg_choice = ''
     while tg_choice not in ('1', '2', '3', '4'):
         tg_choice = input('    \033[92m❯\033[0m ').strip()
@@ -5141,7 +5153,7 @@ def proxy_diagnostic():
         Text(f"✖  Failed      {fail_count:,}\n", style="bold bright_red") +
         Text(f"◈  Total       {len(results):,}\n", style="dim"),
         title="[bold bright_yellow]DIAGNOSTIC COMPLETE[/bold bright_yellow]",
-        border_style="bright_yellow", box=box.HEAVY, expand=False
+        border_style="bright_yellow", box=box.ROUNDED, expand=False
     ))
     print()
 
@@ -5226,7 +5238,7 @@ def display_banner():
     R  = '\033[0m'
     AM = '\033[1;97m'  # white
     CY = '\033[96m'    # cyan accent
-    PK = '\033[95m'    # magenta accent
+    PK = '\033[38;5;139m'  # soft purple-gray
     DM = '\033[2m'
     W  = '\033[1;97m'
 
