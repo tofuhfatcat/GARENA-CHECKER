@@ -1174,17 +1174,17 @@ class BulkLiveDashboard:
         sec1 = [
             _lr(f' {AM}│{RST} {AM}ACCOUNT RESULTS{RST}',
                 f' {AM}│{RST} {AM}SYSTEM{RST}'),
-            _lr(f'   {GN}▸{RST} {WH}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
+            _lr(f'   {GN}▸{RST} {GN}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
                 f'   {DIM}◇{RST} {DIM}Threads{RST}     {WH}{thr_val}{RST}'),
-            _lr(f'   {RD}▸{RST} {WH}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
+            _lr(f'   {RD}▸{RST} {RD}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
                 f'   {GN}●{RST} {DIM}IP Status{RST}   {ip_col}{ip_val}{RST}'),
-            _lr(f'   {GN}◆{RST} {WH}Clean{RST}        {GN}{clean:>8,}{RST}  {DIM}{cp}{RST}',
+            _lr(f'   {GN}◆{RST} {GN}Clean{RST}        {GN}{clean:>8,}{RST}  {DIM}{cp}{RST}',
                 f'   {DIM}▸{RST} {DIM}Speed{RST}       {WH}{rate:.1f}/s{RST}'),
-            _lr(f'   {YL}◇{RST} {WH}Not Clean{RST}    {YL}{nc:>8,}{RST}  {DIM}{np_s}{RST}',
+            _lr(f'   {YL}◇{RST} {YL}Not Clean{RST}    {YL}{nc:>8,}{RST}  {DIM}{np_s}{RST}',
                 f'   {DIM}◆{RST} {DIM}CPM{RST}         {WH}{cpm:.0f}{RST}'),
-            _lr(f'   {TL}●{RST} {WH}CODM{RST}         {TL}{codm_count:>8,}{RST}  {DIM}{dp}{RST}',
+            _lr(f'   {TL}●{RST} {TL}CODM{RST}         {TL}{codm_count:>8,}{RST}  {DIM}{dp}{RST}',
                 f'   {DIM}◇{RST} {DIM}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
-            _lr(f'   {PK}○{RST} {WH}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {DIM}{ndp}{RST}',
+            _lr(f'   {PK}○{RST} {PK}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {DIM}{ndp}{RST}',
                 f'   {DIM}○{RST} {DIM}ETA{RST}         {CY}{eta_str}{RST}'),
         ]
 
@@ -1224,7 +1224,8 @@ class BulkLiveDashboard:
             lvl_tag = f'{CY}Lv{lvl}{RST} ' if lvl else ''
             if ok:
                 mark = f'{GN}✔{RST}'
-                text = f'{WH}{acct}{RST}  {lvl_tag}{GN}{reason}{RST}'
+                rc = GN if reason == 'CLEAN' else YL
+                text = f'{WH}{acct}{RST}  {lvl_tag}{rc}{reason}{RST}'
             else:
                 mark = f'{RD}✖{RST}'
                 text = f'{DIM}{acct}{RST}  {RD}{reason}{RST}'
