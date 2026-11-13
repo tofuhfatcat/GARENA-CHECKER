@@ -4443,37 +4443,9 @@ def bulk_check(bulk_mode: str = 'full'):
                 threading.Thread(target=_send_tg, args=(TG_BOT_TOKEN, TG_CHAT_ID, msg, False), daemon=True).start()
     global _TG_HOOK
     _TG_HOOK = _maybe_send_tg
-    # ── Display mode selection ──────────────────────────────────────
+    # ── Display mode: live feed handles results, dashboard only ─────
     global _DISPLAY_MODE
-    clear_screen()
-    display_banner()
-    term_w = shutil.get_terminal_size((80, 20)).columns
-    width_dm = min(max(term_w - 6, 40), 60)
-    def _dm_box(color, content):
-        top = f'  {color}' + chr(0x250F) + chr(0x2501) * (width_dm + 2) + chr(0x2513) + f'{_RST}'
-        div = f'  {color}' + chr(0x2523) + chr(0x2501) * (width_dm + 2) + chr(0x252B) + f'{_RST}'
-        bot = f'  {color}' + chr(0x2517) + chr(0x2501) * (width_dm + 2) + chr(0x251B) + f'{_RST}'
-        return top, div, bot
-    def _dm_line(color, content):
-        import re as _re
-        visible = len(_re.sub(chr(27) + r'\[[0-9;]*m', '', content))
-        pad = max(width_dm - visible, 0)
-        return f'  {color}' + chr(0x2503) + f'{_RST} {content}' + ' ' * pad + f' {color}' + chr(0x2503) + f'{_RST}'
-    _CY_MG = _CY
-    top, div, bot = _dm_box(_CY_MG, '')
-    print(top)
-    print(_dm_line(_CY_MG, f'{_BRT}{_WH}' + chr(0x25C8) + f'  DISPLAY MODE{_RST}'))
-    print(div)
-    print(_dm_line(_CY_MG, f'{_WH}1{_RST}  {_DIM}Dashboard only{_RST}      {_DIM}(cleaner, faster){_RST}'))
-    print(_dm_line(_CY_MG, f'{_WH}2{_RST}  {_DIM}Dashboard + results{_RST}  {_DIM}(cards scroll above){_RST}'))
-    print(bot)
-    print()
-    _dm_choice = ''
-    while _dm_choice not in ('1', '2'):
-        _dm_choice = input(f'  {_CY}' + chr(0x276F) + f' Select mode (1/2) {_DIM}[default: 1]{_RST}  {_CY}' + chr(0x276F) + f'{_RST} ').strip() or '1'
-    _DISPLAY_MODE = 'dashboard' if _dm_choice == '1' else 'both'
-    _log('SUCCESS', f'Display mode: {_BRT}{_DISPLAY_MODE}{_RST}')
-    print()
+    _DISPLAY_MODE = 'dashboard'
     clear_screen()
     dashboard = BulkLiveDashboard(len(accounts), max_threads=num_threads)
     globals()['_dashboard_ref'] = dashboard
@@ -4989,12 +4961,12 @@ def display_banner():
     ]
 
     row_colors = [
-        (255, 170, 0,   255, 200, 50),
-        (255, 150, 0,   255, 100, 50),
-        (255, 120, 0,   255,  80, 30),
-        (255, 100, 0,   0,   229, 255),
-        (200,  80, 0,   0,   200, 255),
-        (150,  60, 0,   0,   180, 255),
+        (255, 190, 60,  255, 215, 100),
+        (255, 170, 20,  255, 200, 70),
+        (255, 150, 0,   255, 180, 40),
+        (255, 130, 0,   255, 160, 30),
+        (230, 110, 0,   255, 140, 20),
+        (200,  90, 0,   240, 120, 10),
     ]
 
     def _center(s, vis_len):
