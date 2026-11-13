@@ -1009,18 +1009,18 @@ class BulkLiveDashboard:
         top_hits = s.get('top_hits', [])
 
         E   = '\x1b'
-        # Standard 16-color terminal palette — clean, basic, reads in any theme.
-        AM  = E + '[1;96m'   # bright cyan — titles / brand / section headers
-        CY  = E + '[96m'     # cyan — accent (ETA, tags, Lv)
+        # Like the taji reference: neutral structure, color only on the data.
+        AM  = E + '[1;97m'   # bold white — titles / brand / section headers
+        CY  = E + '[96m'     # cyan — small accents (ETA, tags, Lv)
         GN  = E + '[92m'     # green — valid / clean
         RD  = E + '[91m'     # red — invalid
         YL  = E + '[93m'     # yellow — not clean
-        TL  = E + '[96m'     # cyan — CODM
+        TL  = E + '[94m'     # blue — CODM
         PK  = E + '[95m'     # magenta — no CODM
         WH  = E + '[97m'     # white — text
         DIM = E + '[2m'
-        OR  = E + '[94m'     # blue — level bars
-        BRD = E + '[96m'     # cyan — frame
+        OR  = E + '[96m'     # cyan — level bars
+        BRD = E + '[37m'     # neutral white — frame (recedes, lets data pop)
         BRDd= E + '[2m'      # dim — inner lines / bar tracks
         RST = E + '[0m'
 
@@ -5104,9 +5104,9 @@ def display_banner():
     clear_screen()
     tw = _tw()
     R  = '\033[0m'
-    AM = '\033[96m'   # cyan
-    CY = '\033[96m'   # cyan
-    PK = '\033[95m'  # purple
+    AM = '\033[1;97m'  # white
+    CY = '\033[96m'    # cyan accent
+    PK = '\033[95m'    # magenta accent
     DM = '\033[2m'
     W  = '\033[1;97m'
 
@@ -5119,14 +5119,14 @@ def display_banner():
         r" ╚═╝  ╚═╝ ╚══════╝ ╚══════╝  ╚═════╝",
     ]
 
-    # simple clean cyan gradient
+    # neutral light-gray banner (not themed)
     row_colors = [
-        (120, 240, 245,  100, 235, 242),
-        ( 95, 232, 240,   80, 226, 238),
-        ( 70, 224, 236,   60, 218, 234),
-        ( 55, 216, 232,   50, 210, 230),
-        ( 45, 208, 228,   42, 203, 226),
-        ( 40, 200, 225,   40, 200, 225),
+        (235, 237, 242,  225, 228, 235),
+        (220, 223, 230,  210, 214, 222),
+        (205, 209, 218,  198, 202, 212),
+        (192, 196, 207,  186, 190, 202),
+        (182, 186, 198,  178, 182, 195),
+        (176, 180, 193,  176, 180, 193),
     ]
 
     def _center(s, vis_len):
