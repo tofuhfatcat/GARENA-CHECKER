@@ -83,12 +83,12 @@ CHANNELS = [
 
 MAX_AMOUNT = 50_000
 PREVIEW_COUNT = 8
-DEFAULT_RANGE = (100, 999)
+DEFAULT_RANGE = (1, 999)
 COOLDOWN_SECONDS = 30 * 60   # wait between generations (admins exempt)
 FEEDBACK_KEEP = 50           # how many feedback entries to retain
 
 AMOUNT_PRESETS = [100, 250, 500, 1000, 2500, 5000]
-RANGE_PRESETS = [(1, 99), (10, 99), (100, 999), (1000, 9999)]
+RANGE_PRESETS = [(1, 999), (1, 99), (100, 999), (1000, 9999)]
 
 # (name, locale, flag)
 COUNTRIES = {
