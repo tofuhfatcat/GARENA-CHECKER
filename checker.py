@@ -1210,8 +1210,8 @@ class BulkLiveDashboard:
         ip_col = GN if ip_ok else RD
 
         sec1 = [
-            _lr(f' {AM}│{RST} {AM}ACCOUNT RESULTS{RST}',
-                f' {AM}│{RST} {AM}SYSTEM{RST}'),
+            _lr(f' {AM}ACCOUNT RESULTS{RST}',
+                f' {AM}SYSTEM{RST}'),
             _lr(f'   {GN}▸{RST} {GN}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
                 f'   {CY}◇{RST} {DIM}Threads{RST}     {CY}{thr_val}{RST}'),
             _lr(f'   {RD}▸{RST} {RD}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
@@ -1249,7 +1249,7 @@ class BulkLiveDashboard:
 
         if top_hits:
             lvl_rows.append('')
-            lvl_rows.append(f' {AM}│{RST} {AM}TOP HITS (Lv 100+){RST}')
+            lvl_rows.append(f' {AM}TOP HITS (Lv 100+){RST}')
             for lvl, acct, tag, is_cln in top_hits[:3]:
                 tc = GN if is_cln else YL
                 lvl_rows.append(f'   {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
@@ -1277,11 +1277,11 @@ class BulkLiveDashboard:
             mark = f'{GN}✔{RST}' if ok else f'{RD}✖{RST}'
             acct_col = WH if ok else DIM
             text = f'{acct_col}{acct_s}{RST}  {lvl_tag}{rc}{reason_s}{RST}'
-            feed_rows.append(f'   {CY}{num:>5d}{RST} {mark}  {text}')
+            feed_rows.append(f'   {CY}{num}{RST} {mark}  {text}')
 
         sec2_hdr = _lr(
-            f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
-            f' {AM}│{RST} {AM}LIVE FEED{RST}')
+            f' {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
+            f' {AM}LIVE FEED{RST}')
         sec2 = [sec2_hdr]
         mr = max(len(lvl_rows), len(feed_rows))
         for i in range(mr):
