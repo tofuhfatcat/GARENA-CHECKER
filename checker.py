@@ -1277,7 +1277,7 @@ class BulkLiveDashboard:
             mark = f'{GN}✔{RST}' if ok else f'{RD}✖{RST}'
             acct_col = WH if ok else DIM
             text = f'{acct_col}{acct_s}{RST}  {lvl_tag}{rc}{reason_s}{RST}'
-            feed_rows.append(f'   {CY}{num}{RST} {mark}  {text}')
+            feed_rows.append(f'  {CY}{num}{RST} {mark}  {text}')
 
         sec2_hdr = _lr(
             f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
@@ -1307,10 +1307,10 @@ class BulkLiveDashboard:
             lines.append(_bord(row))
         for row in sec1:
             lines.append(_bord(row))
-        lines.append(_bord(''))
+        lines.append(_bord(_lr('', '')))
         for row in sec2:
             lines.append(_bord(row))
-        lines.append(_bord(''))
+        lines.append(_bord(_lr('', '')))
         lines.append(_bord(bot_content))
         lines.append(bot_border)
         lines.append('')
