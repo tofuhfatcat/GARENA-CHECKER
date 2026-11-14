@@ -840,6 +840,7 @@ class BulkLiveDashboard:
         self._dash_lines:  int   = 0    # lines the last render occupied
         self._last_redraw: float = 0.0
         self._redraw_iv:   float = 0.3  # min seconds between redraws
+        self._last_tw:     int   = 0    # last-rendered terminal width (resize detect)
         self._build_snap()
 
     # ── Public API ───────────────────────────────────────────────────────
@@ -940,6 +941,13 @@ class BulkLiveDashboard:
 
     def _redraw(self):
         """Re-render dashboard in-place.  Call under _dash_print_lock."""
+        # Detect terminal resize — if width changed, the old lines may have
+        # wrapped and our cursor-up count won't erase them. Full-clear then.
+        cur_tw = shutil.get_terminal_size((84, 24)).columns
+        if cur_tw != self._last_tw:
+            _raw_write('\x1b[H\x1b[2J')
+            self._dash_lines = 0
+            self._last_tw = cur_tw
         txt = self.render()
         self._dash_lines = txt.count('\n')
         _raw_write(txt)
