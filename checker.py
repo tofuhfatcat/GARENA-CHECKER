@@ -1310,6 +1310,7 @@ class BulkLiveDashboard:
         lines.append(_bord(_lr('', '')))
         for row in sec2:
             lines.append(_bord(row))
+        lines.append(_bord(''))
         lines.append(_bord(bot_content))
         lines.append(bot_border)
         lines.append('')
