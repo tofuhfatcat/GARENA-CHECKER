@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Name/Combo Generator — Telegram bot
-Force-join gate + inline UI. by @dvlist
+Hesu Generator — Telegram bot
+Force-join gate · button-driven UI · admin panel. by @dvlist
 """
 from __future__ import annotations
 
@@ -51,6 +51,12 @@ import os
 import random
 import time
 
+import names
+import telebot
+from faker import Faker
+from telebot import types
+from telebot.apihelper import ApiTelegramException
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)s  %(message)s",
@@ -58,56 +64,52 @@ logging.basicConfig(
 )
 log = logging.getLogger("bot")
 
-import names
-import telebot
-from faker import Faker
-from telebot import types
-
 # ── Config — tune here ───────────────────────────────────────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")  # FILL: bot token from @BotFather
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "9213601526:AAHEzniDdfd3qRYlyi4KnMFCkFVRpOKr9I8")  # FILL: @BotFather
 
-# Admin user ids — only these can open /admin. FILL: add His Telegram user id.
-ADMIN_IDS = [
-    # 123456789,
-]
+ADMIN_IDS = [6654003878]  # FILL: His Telegram user id(s)
 
-DATA_FILE = "bot_data.json"  # tiny json store: known users + counters
+DATA_FILE = "bot_data.json"
 
-# Channels the user must join before the bot unlocks.
-# The bot MUST be an admin (or at least a member) in each channel, or
-# get_chat_member cannot read membership. username is used for the verify call,
-# url is the public join link, title is the button label.
-# FILL: replace with His channels
+BRAND = "HESU"                  # header title
+TAGLINE = "COMBO / NAME GENERATOR"
+
+# The bot MUST be admin (or a member) in each channel/group, or get_chat_member
+# cannot read membership and the gate never opens. FILL: His channels.
 CHANNELS = [
-    {"title": "Main Channel",   "username": "@your_channel_1", "url": "https://t.me/your_channel_1"},
-    {"title": "Backup Channel", "username": "@your_channel_2", "url": "https://t.me/your_channel_2"},
+    {"title": "Main Channel", "username": "@HesuMainChannel", "url": "https://t.me/HesuMainChannel"},
+    {"title": "Group Chat",   "username": "@HesuDiscussion",  "url": "https://t.me/HesuDiscussion"},
 ]
 
-MAX_AMOUNT = 50_000          # hard cap per request, keep the box honest
-PREVIEW_COUNT = 8            # lines shown inline before the file
-DEFAULT_RANGE = (100, 999)   # fallback suffix range
+MAX_AMOUNT = 50_000
+PREVIEW_COUNT = 8
+DEFAULT_RANGE = (100, 999)
 
+AMOUNT_PRESETS = [100, 250, 500, 1000, 2500, 5000]
+RANGE_PRESETS = [(1, 99), (10, 99), (100, 999), (1000, 9999)]
+
+# (name, locale, flag)
 COUNTRIES = {
-    "1":  ("USA",         "en_US"),
-    "2":  ("UK",          "en_GB"),
-    "3":  ("Philippines", "en_PH"),
-    "4":  ("Russia",      "ru_RU"),
-    "5":  ("Germany",     "de_DE"),
-    "6":  ("France",      "fr_FR"),
-    "7":  ("Italy",       "it_IT"),
-    "8":  ("Spain",       "es_ES"),
-    "9":  ("India",       "en_IN"),
-    "10": ("Japan",       "ja_JP"),
-    "11": ("China",       "zh_CN"),
-    "12": ("Brazil",      "pt_BR"),
-    "13": ("Mexico",      "es_MX"),
-    "14": ("South Korea", "ko_KR"),
-    "15": ("Indonesia",   "id_ID"),
-    "16": ("Poland",      "pl_PL"),
-    "17": ("Netherlands", "nl_NL"),
-    "18": ("Turkey",      "tr_TR"),
-    "19": ("Ukraine",     "uk_UA"),
-    "20": ("All Countries", None),
+    "1":  ("USA",         "en_US", "🇺🇸"),
+    "2":  ("UK",          "en_GB", "🇬🇧"),
+    "3":  ("Philippines", "en_PH", "🇵🇭"),
+    "4":  ("Russia",      "ru_RU", "🇷🇺"),
+    "5":  ("Germany",     "de_DE", "🇩🇪"),
+    "6":  ("France",      "fr_FR", "🇫🇷"),
+    "7":  ("Italy",       "it_IT", "🇮🇹"),
+    "8":  ("Spain",       "es_ES", "🇪🇸"),
+    "9":  ("India",       "en_IN", "🇮🇳"),
+    "10": ("Japan",       "ja_JP", "🇯🇵"),
+    "11": ("China",       "zh_CN", "🇨🇳"),
+    "12": ("Brazil",      "pt_BR", "🇧🇷"),
+    "13": ("Mexico",      "es_MX", "🇲🇽"),
+    "14": ("South Korea", "ko_KR", "🇰🇷"),
+    "15": ("Indonesia",   "id_ID", "🇮🇩"),
+    "16": ("Poland",      "pl_PL", "🇵🇱"),
+    "17": ("Netherlands", "nl_NL", "🇳🇱"),
+    "18": ("Turkey",      "tr_TR", "🇹🇷"),
+    "19": ("Ukraine",     "uk_UA", "🇺🇦"),
+    "20": ("All Countries", None,  "🌍"),
 }
 
 _ALL_LOCALES = [
@@ -121,21 +123,20 @@ if not BOT_TOKEN:
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# Per-user flow state. step: menu | amount | range | confirm
+# step: country | amount | amount_custom | range | range_custom | confirm
 _state: dict[int, dict] = {}
-# Admins waiting to send a broadcast message.
 _awaiting_broadcast: set[int] = set()
 
 
 def _st(uid: int) -> dict:
-    return _state.setdefault(uid, {"step": "menu", "country": None, "amount": None, "range": None})
+    return _state.setdefault(uid, {"step": "country", "country": None, "amount": None, "range": None})
 
 
 def is_admin(uid: int) -> bool:
     return uid in ADMIN_IDS
 
 
-# ── Persistence (users + counters) ───────────────────────────────────────────
+# ── Persistence ──────────────────────────────────────────────────────────────
 _data = {"users": {}, "total_generated": 0, "total_runs": 0}
 
 
@@ -143,8 +144,7 @@ def load_data():
     global _data
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            loaded = json.load(f)
-        _data.update(loaded)
+            _data.update(json.load(f))
         _data.setdefault("users", {})
     except Exception:
         pass
@@ -166,15 +166,49 @@ def track_user(user):
     rec["username"] = getattr(user, "username", None)
     rec["name"] = getattr(user, "first_name", None)
     rec.setdefault("first_seen", int(time.time()))
+    rec.setdefault("generated", 0)
+    rec.setdefault("runs", 0)
     rec["last_seen"] = int(time.time())
     _data["users"][uid] = rec
     save_data()
 
 
-def bump_generated(n):
+def bump_generated(uid, n):
     _data["total_generated"] += int(n)
     _data["total_runs"] += 1
+    rec = _data["users"].setdefault(str(uid), {})
+    rec["generated"] = rec.get("generated", 0) + int(n)
+    rec["runs"] = rec.get("runs", 0) + 1
     save_data()
+
+
+# ── Visual helpers ───────────────────────────────────────────────────────────
+DIV = "━━━━━━━━━━━━━━━━━━━━"
+
+
+def header(subtitle=""):
+    top = f"<b>⚡ {BRAND}</b>  <i>{TAGLINE}</i>"
+    if subtitle:
+        return f"{top}\n<code>{DIV}</code>\n{subtitle}"
+    return f"{top}\n<code>{DIV}</code>"
+
+
+def card(rows):
+    """Framed monospace key/value block for that 'dashboard' look."""
+    width = max((len(k) for k, _ in rows), default=0)
+    body = "\n".join(f"{k.ljust(width)} │ {v}" for k, v in rows)
+    return f"<pre>{body}</pre>"
+
+
+def _safe_edit(chat_id, msg_id, text, kb=None):
+    try:
+        bot.edit_message_text(text, chat_id, msg_id, reply_markup=kb)
+    except ApiTelegramException as e:
+        if "message is not modified" in str(e):
+            return
+        bot.send_message(chat_id, text, reply_markup=kb)
+    except Exception:
+        bot.send_message(chat_id, text, reply_markup=kb)
 
 
 # ── Generation core ──────────────────────────────────────────────────────────
@@ -199,7 +233,6 @@ def generate_first_name(generator):
 
 
 def build_combos(country_key, amount, number_range):
-    """Return (lines, per_country_counts). Format: NameNum:NameNum, deduped."""
     start, end = number_range
     selected = (
         list(COUNTRIES.values())[:-1]
@@ -211,12 +244,10 @@ def build_combos(country_key, amount, number_range):
     seen: set[str] = set()
     counts: dict[str, int] = {}
 
-    for country_name, locale in selected:
+    for country_name, locale, _flag in selected:
         generator = get_generator(locale)
-        made = 0
-        attempts = 0
+        made = attempts = 0
         max_attempts = max(amount * 20, 1000)
-
         while made < amount and attempts < max_attempts:
             attempts += 1
             first = generate_first_name(generator)
@@ -228,7 +259,6 @@ def build_combos(country_key, amount, number_range):
             seen.add(key)
             lines.append(line)
             made += 1
-
         counts[country_name] = made
 
     return lines, counts
@@ -236,7 +266,6 @@ def build_combos(country_key, amount, number_range):
 
 # ── Force-join gate ──────────────────────────────────────────────────────────
 def missing_channels(user_id):
-    """Return channels the user has NOT joined. On API error, fail closed + log why."""
     missing = []
     for ch in CHANNELS:
         try:
@@ -247,17 +276,475 @@ def missing_channels(user_id):
             elif status == "restricted" and not getattr(m, "is_member", False):
                 missing.append(ch)
         except Exception as e:
-            # Most common: bot is not an admin/member of this channel, so it
-            # literally cannot read membership. Shows up as the gate never
-            # opening. Log it loud so it's obvious, then fail closed.
             log.warning("gate check failed for %s — is the bot admin there? (%s)",
                         ch["username"], e)
             missing.append(ch)
     return missing
 
 
+def gate_keyboard(missing):
+    kb = types.InlineKeyboardMarkup()
+    for ch in missing:
+        kb.add(types.InlineKeyboardButton(f"📢  {ch['title']}", url=ch["url"]))
+    kb.add(types.InlineKeyboardButton("✅  I've Joined — Verify", callback_data="gate:check"))
+    return kb
+
+
+def send_gate(chat_id, missing, edit_msg=None):
+    text = header(
+        "🔒 <b>Access Locked</b>\n\n"
+        "Join the channel(s) below to unlock the generator, "
+        "then tap <b>Verify</b>.\n\n"
+        f"{card([('Required', str(len(CHANNELS))), ('Pending', str(len(missing)))])}"
+    )
+    kb = gate_keyboard(missing)
+    if edit_msg is not None:
+        _safe_edit(chat_id, edit_msg, text, kb)
+    else:
+        bot.send_message(chat_id, text, reply_markup=kb)
+
+
+# ── Menus / UI ───────────────────────────────────────────────────────────────
+def main_menu_kb(uid):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("🚀  Generate Combos", callback_data="nav:gen"))
+    kb.row(
+        types.InlineKeyboardButton("📊  My Stats", callback_data="nav:stats"),
+        types.InlineKeyboardButton("❓  Help", callback_data="nav:help"),
+    )
+    if is_admin(uid):
+        kb.add(types.InlineKeyboardButton("🛠  Admin Panel", callback_data="adm:open"))
+    return kb
+
+
+def main_menu_text(uid):
+    rec = _data["users"].get(str(uid), {})
+    stats = card([
+        ("Your runs", str(rec.get("runs", 0))),
+        ("Your combos", f"{rec.get('generated', 0):,}"),
+    ])
+    return header("Welcome. Pick an action below 👇\n\n" + stats)
+
+
+def country_kb():
+    kb = types.InlineKeyboardMarkup()
+    pairs = list(COUNTRIES.items())[:-1]
+    for i in range(0, len(pairs), 2):
+        row = []
+        for key, (name, _loc, flag) in pairs[i:i + 2]:
+            row.append(types.InlineKeyboardButton(f"{flag} {name}", callback_data=f"c:{key}"))
+        kb.row(*row)
+    kb.add(types.InlineKeyboardButton("🌍  All Countries", callback_data="c:20"))
+    kb.add(types.InlineKeyboardButton("« Back", callback_data="nav:menu"))
+    return kb
+
+
+def amount_kb():
+    kb = types.InlineKeyboardMarkup()
+    btns = [types.InlineKeyboardButton(f"{n:,}", callback_data=f"amt:{n}") for n in AMOUNT_PRESETS]
+    for i in range(0, len(btns), 3):
+        kb.row(*btns[i:i + 3])
+    kb.add(types.InlineKeyboardButton("✏️  Custom amount", callback_data="amt:custom"))
+    kb.add(types.InlineKeyboardButton("« Back", callback_data="nav:gen"))
+    return kb
+
+
+def range_kb():
+    kb = types.InlineKeyboardMarkup()
+    btns = [types.InlineKeyboardButton(f"{a}-{b}", callback_data=f"rng:{a}-{b}") for a, b in RANGE_PRESETS]
+    for i in range(0, len(btns), 2):
+        kb.row(*btns[i:i + 2])
+    kb.add(types.InlineKeyboardButton("✏️  Custom range", callback_data="rng:custom"))
+    kb.add(types.InlineKeyboardButton("« Back", callback_data="step:amount"))
+    return kb
+
+
+def confirm_kb():
+    kb = types.InlineKeyboardMarkup()
+    kb.row(
+        types.InlineKeyboardButton("🚀  Generate", callback_data="go"),
+        types.InlineKeyboardButton("« Back", callback_data="step:range"),
+    )
+    kb.add(types.InlineKeyboardButton("✖  Cancel", callback_data="nav:menu"))
+    return kb
+
+
+def show_menu(chat_id, uid, edit=None):
+    if edit:
+        _safe_edit(chat_id, edit, main_menu_text(uid), main_menu_kb(uid))
+    else:
+        bot.send_message(chat_id, main_menu_text(uid), reply_markup=main_menu_kb(uid))
+
+
+def show_country(chat_id, edit=None):
+    text = header("🚀 <b>Step 1/3 — Country</b>\n\nChoose a source locale:")
+    _safe_edit(chat_id, edit, text, country_kb()) if edit else \
+        bot.send_message(chat_id, text, reply_markup=country_kb())
+
+
+def show_amount(chat_id, uid, edit=None):
+    name, _loc, flag = COUNTRIES[_st(uid)["country"]]
+    text = header(f"🔢 <b>Step 2/3 — Amount</b>\n\n{flag} <b>{name}</b>\nHow many combos?")
+    _safe_edit(chat_id, edit, text, amount_kb()) if edit else \
+        bot.send_message(chat_id, text, reply_markup=amount_kb())
+
+
+def show_range(chat_id, uid, edit=None):
+    st = _st(uid)
+    name, _loc, flag = COUNTRIES[st["country"]]
+    text = header(
+        f"🎲 <b>Step 3/3 — Number Range</b>\n\n{flag} <b>{name}</b> · "
+        f"<b>{st['amount']:,}</b> combos\nPick the suffix range:"
+    )
+    _safe_edit(chat_id, edit, text, range_kb()) if edit else \
+        bot.send_message(chat_id, text, reply_markup=range_kb())
+
+
+def show_confirm(chat_id, uid, edit=None):
+    st = _st(uid)
+    name, _loc, flag = COUNTRIES[st["country"]]
+    s, e = st["range"]
+    text = header(
+        "🧾 <b>Review & Confirm</b>\n\n"
+        + card([
+            ("Country", f"{flag} {name}"),
+            ("Amount", f"{st['amount']:,}"),
+            ("Range", f"{s}-{e}"),
+            ("Format", "Name##:Name##"),
+        ])
+    )
+    _safe_edit(chat_id, edit, text, confirm_kb()) if edit else \
+        bot.send_message(chat_id, text, reply_markup=confirm_kb())
+
+
+# ── Gate guard ───────────────────────────────────────────────────────────────
+def guard(call):
+    """True if blocked (and gate was shown)."""
+    miss = missing_channels(call.from_user.id)
+    if miss:
+        bot.answer_callback_query(call.id, "Join the channels first ❌", show_alert=True)
+        send_gate(call.message.chat.id, miss, edit_msg=call.message.message_id)
+        return True
+    return False
+
+
+# ── Handlers ─────────────────────────────────────────────────────────────────
+@bot.message_handler(commands=["start", "menu"])
+def on_start(message):
+    uid = message.from_user.id
+    track_user(message.from_user)
+    _state.pop(uid, None)
+    miss = missing_channels(uid)
+    if miss:
+        send_gate(message.chat.id, miss)
+        return
+    show_menu(message.chat.id, uid)
+
+
+@bot.callback_query_handler(func=lambda c: c.data == "gate:check")
+def on_gate_check(call):
+    uid = call.from_user.id
+    miss = missing_channels(uid)
+    if miss:
+        bot.answer_callback_query(call.id, f"Still {len(miss)} channel(s) left ❌", show_alert=True)
+        send_gate(call.message.chat.id, miss, edit_msg=call.message.message_id)
+        return
+    bot.answer_callback_query(call.id, "Unlocked ✅")
+    show_menu(call.message.chat.id, uid, edit=call.message.message_id)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("nav:"))
+def on_nav(call):
+    if guard(call):
+        return
+    uid = call.from_user.id
+    what = call.data.split(":", 1)[1]
+    cid, mid = call.message.chat.id, call.message.message_id
+    bot.answer_callback_query(call.id)
+
+    if what == "menu":
+        _state.pop(uid, None)
+        show_menu(cid, uid, edit=mid)
+    elif what == "gen":
+        _st(uid)["step"] = "country"
+        show_country(cid, edit=mid)
+    elif what == "stats":
+        rec = _data["users"].get(str(uid), {})
+        since = rec.get("first_seen")
+        since_s = time.strftime("%Y-%m-%d", time.localtime(since)) if since else "—"
+        text = header("📊 <b>Your Stats</b>\n\n" + card([
+            ("Runs", str(rec.get("runs", 0))),
+            ("Combos", f"{rec.get('generated', 0):,}"),
+            ("Member since", since_s),
+        ]))
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("« Back", callback_data="nav:menu"))
+        _safe_edit(cid, mid, text, kb)
+    elif what == "help":
+        text = header(
+            "❓ <b>Help</b>\n\n"
+            "1️⃣ Pick a country\n"
+            "2️⃣ Pick how many combos\n"
+            "3️⃣ Pick a number range\n"
+            "4️⃣ Confirm → get a <code>.txt</code> file\n\n"
+            "Format: <code>Name123:Name123</code>\n"
+            f"Max per run: <b>{MAX_AMOUNT:,}</b>"
+        )
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("« Back", callback_data="nav:menu"))
+        _safe_edit(cid, mid, text, kb)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("step:"))
+def on_step(call):
+    if guard(call):
+        return
+    uid = call.from_user.id
+    cid, mid = call.message.chat.id, call.message.message_id
+    bot.answer_callback_query(call.id)
+    which = call.data.split(":", 1)[1]
+    if which == "amount":
+        _st(uid)["step"] = "amount"
+        show_amount(cid, uid, edit=mid)
+    elif which == "range":
+        _st(uid)["step"] = "range"
+        show_range(cid, uid, edit=mid)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("c:"))
+def on_country(call):
+    if guard(call):
+        return
+    uid = call.from_user.id
+    key = call.data.split(":", 1)[1]
+    if key not in COUNTRIES:
+        bot.answer_callback_query(call.id, "Unknown")
+        return
+    st = _st(uid)
+    st["country"] = key
+    st["step"] = "amount"
+    bot.answer_callback_query(call.id)
+    show_amount(call.message.chat.id, uid, edit=call.message.message_id)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("amt:"))
+def on_amount(call):
+    if guard(call):
+        return
+    uid = call.from_user.id
+    cid, mid = call.message.chat.id, call.message.message_id
+    val = call.data.split(":", 1)[1]
+    if val == "custom":
+        _st(uid)["step"] = "amount_custom"
+        bot.answer_callback_query(call.id)
+        _safe_edit(cid, mid, header(
+            f"✏️ <b>Custom Amount</b>\n\nSend a number <b>1–{MAX_AMOUNT:,}</b>."
+        ))
+        return
+    st = _st(uid)
+    st["amount"] = int(val)
+    st["step"] = "range"
+    bot.answer_callback_query(call.id, f"{int(val):,} ✓")
+    show_range(cid, uid, edit=mid)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("rng:"))
+def on_range(call):
+    if guard(call):
+        return
+    uid = call.from_user.id
+    cid, mid = call.message.chat.id, call.message.message_id
+    val = call.data.split(":", 1)[1]
+    if val == "custom":
+        _st(uid)["step"] = "range_custom"
+        bot.answer_callback_query(call.id)
+        _safe_edit(cid, mid, header(
+            "✏️ <b>Custom Range</b>\n\nSend like <code>100-999</code>."
+        ))
+        return
+    a, b = (int(x) for x in val.split("-"))
+    st = _st(uid)
+    st["range"] = (a, b)
+    st["step"] = "confirm"
+    bot.answer_callback_query(call.id, f"{a}-{b} ✓")
+    show_confirm(cid, uid, edit=mid)
+
+
+@bot.callback_query_handler(func=lambda c: c.data == "go")
+def on_go(call):
+    if guard(call):
+        return
+    uid = call.from_user.id
+    cid, mid = call.message.chat.id, call.message.message_id
+    st = _st(uid)
+    if st.get("step") != "confirm" or not st.get("country"):
+        bot.answer_callback_query(call.id, "Start over with /start")
+        return
+
+    bot.answer_callback_query(call.id, "Working…")
+    for frame in ("⏳ Spinning up the generator…",
+                  "🧬 Building combos…",
+                  "📦 Packing your file…"):
+        _safe_edit(cid, mid, header(frame))
+        time.sleep(0.4)
+
+    lines, counts = build_combos(st["country"], st["amount"], st["range"])
+    total = len(lines)
+    if total == 0:
+        _safe_edit(cid, mid, header("⚠️ Nothing generated. Try /start again."))
+        _state.pop(uid, None)
+        return
+
+    name, _loc, flag = COUNTRIES[st["country"]]
+    s, e = st["range"]
+    preview = "\n".join(lines[:PREVIEW_COUNT])
+    breakdown = card([(k, f"{v:,}") for k, v in counts.items()]) if st["country"] == "20" else ""
+
+    caption = header(
+        "✅ <b>Done!</b>\n\n"
+        + card([("Country", f"{flag} {name}"), ("Range", f"{s}-{e}"), ("Total", f"{total:,}")])
+        + (f"\n{breakdown}" if breakdown else "")
+        + f"\n<b>Preview</b>\n<code>{preview}</code>"
+    )
+
+    buf = io.BytesIO(("\n".join(lines) + "\n").encode("utf-8"))
+    buf.name = f"{BRAND.lower()}_{name.replace(' ', '_')}_{total}.txt"
+
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("🔁  Generate Again", callback_data="nav:gen"))
+    kb.add(types.InlineKeyboardButton("🏠  Main Menu", callback_data="nav:menu"))
+
+    bot.send_document(cid, buf, caption=caption, reply_markup=kb)
+    try:
+        bot.delete_message(cid, mid)
+    except Exception:
+        pass
+    bump_generated(uid, total)
+    _state.pop(uid, None)
+
+
+# ── Admin panel ──────────────────────────────────────────────────────────────
+def admin_text():
+    return header("🛠 <b>Admin Panel</b>\n\n" + card([
+        ("Users", f"{len(_data['users']):,}"),
+        ("Combos", f"{_data['total_generated']:,}"),
+        ("Runs", f"{_data['total_runs']:,}"),
+        ("Channels", str(len(CHANNELS))),
+    ]))
+
+
+def admin_kb():
+    kb = types.InlineKeyboardMarkup()
+    kb.row(
+        types.InlineKeyboardButton("🔄 Refresh", callback_data="adm:open"),
+        types.InlineKeyboardButton("📣 Broadcast", callback_data="adm:bc"),
+    )
+    kb.row(
+        types.InlineKeyboardButton("📢 Channels", callback_data="adm:ch"),
+        types.InlineKeyboardButton("🏠 Menu", callback_data="nav:menu"),
+    )
+    return kb
+
+
+@bot.message_handler(commands=["admin"])
+def on_admin(message):
+    if not is_admin(message.from_user.id):
+        return
+    bot.send_message(message.chat.id, admin_text(), reply_markup=admin_kb())
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("adm:"))
+def on_admin_cb(call):
+    uid = call.from_user.id
+    if not is_admin(uid):
+        bot.answer_callback_query(call.id, "Not authorized")
+        return
+    action = call.data.split(":", 1)[1]
+    cid, mid = call.message.chat.id, call.message.message_id
+
+    if action == "open":
+        bot.answer_callback_query(call.id)
+        _safe_edit(cid, mid, admin_text(), admin_kb())
+    elif action == "ch":
+        bot.answer_callback_query(call.id)
+        rows = [(c["title"], c["username"]) for c in CHANNELS] or [("—", "none")]
+        _safe_edit(cid, mid, header("📢 <b>Gate Channels</b>\n\n" + card(rows)), admin_kb())
+    elif action == "bc":
+        _awaiting_broadcast.add(uid)
+        bot.answer_callback_query(call.id)
+        _safe_edit(cid, mid, header(
+            "📣 <b>Broadcast</b>\n\nSend the message now (any type).\n"
+            "It goes to every user. /cancel_bc to abort."
+        ))
+
+
+@bot.message_handler(commands=["cancel_bc"])
+def on_cancel_bc(message):
+    if is_admin(message.from_user.id):
+        _awaiting_broadcast.discard(message.from_user.id)
+        bot.reply_to(message, "Broadcast cancelled.")
+
+
+def do_broadcast(admin_chat_id, message):
+    sent = failed = 0
+    for uid_str in list(_data["users"].keys()):
+        try:
+            bot.copy_message(int(uid_str), message.chat.id, message.message_id)
+            sent += 1
+        except Exception:
+            failed += 1
+        if (sent + failed) % 25 == 0:
+            time.sleep(1)
+    bot.send_message(admin_chat_id, header(
+        "📣 <b>Broadcast Done</b>\n\n" + card([("Sent", str(sent)), ("Failed", str(failed))])
+    ))
+
+
+# ── Free-text (custom inputs + broadcast capture) ────────────────────────────
+@bot.message_handler(func=lambda m: True, content_types=["text"])
+def on_text(message):
+    uid = message.from_user.id
+
+    if uid in _awaiting_broadcast and is_admin(uid):
+        _awaiting_broadcast.discard(uid)
+        bot.reply_to(message, "Sending…")
+        do_broadcast(message.chat.id, message)
+        return
+
+    st = _state.get(uid)
+    if not st:
+        return
+    text = message.text.strip()
+
+    if st["step"] == "amount_custom":
+        if not text.isdigit():
+            bot.reply_to(message, "Send a plain number, e.g. <code>500</code>.")
+            return
+        amount = int(text)
+        if not (0 < amount <= MAX_AMOUNT):
+            bot.reply_to(message, f"Out of range. Use 1–{MAX_AMOUNT:,}.")
+            return
+        st["amount"] = amount
+        st["step"] = "range"
+        show_range(message.chat.id, uid)
+        return
+
+    if st["step"] == "range_custom":
+        try:
+            a, b = (int(x) for x in text.split("-"))
+            if a < 0 or b < a:
+                raise ValueError
+        except Exception:
+            bot.reply_to(message, "Bad range. Example: <code>100-999</code>.")
+            return
+        st["range"] = (a, b)
+        st["step"] = "confirm"
+        show_confirm(message.chat.id, uid)
+        return
+
+
+# ── Boot ─────────────────────────────────────────────────────────────────────
 def preflight():
-    """Verify token + each channel is reachable by the bot. Prints a clear report."""
     try:
         me = bot.get_me()
         log.info("connected as @%s (id %s)", me.username, me.id)
@@ -270,362 +757,20 @@ def preflight():
     for ch in CHANNELS:
         try:
             chat = bot.get_chat(ch["username"])
-            # Can the bot read members here? Checking its own membership proves it.
             bot.get_chat_member(ch["username"], me.id)
             print(f"    OK        {ch['username']}  ({chat.type})")
         except Exception as e:
             ok = False
             print(f"    NOT-OK    {ch['username']}  -> {e}")
-    if not ok:
-        print("\n  Fix: add the bot to each channel/group above AND make it an admin,\n"
-              "       then check the @username is spelled exactly right.\n")
-    else:
-        print("  All channels reachable.\n")
-
-
-def gate_keyboard(missing):
-    kb = types.InlineKeyboardMarkup()
-    for ch in missing:
-        kb.add(types.InlineKeyboardButton(f"📢 {ch['title']}", url=ch["url"]))
-    kb.add(types.InlineKeyboardButton("✅ I've Joined", callback_data="gate:check"))
-    return kb
-
-
-def send_gate(chat_id, missing, edit_msg=None):
-    text = (
-        "🔒 <b>Access locked</b>\n\n"
-        "Join the channel(s) below, then tap <b>✅ I've Joined</b>.\n\n"
-        f"Pending: <b>{len(missing)}</b>"
-    )
-    kb = gate_keyboard(missing)
-    if edit_msg is not None:
-        try:
-            bot.edit_message_text(text, chat_id, edit_msg, reply_markup=kb)
-            return
-        except Exception:
-            pass
-    bot.send_message(chat_id, text, reply_markup=kb)
-
-
-# ── UI builders ──────────────────────────────────────────────────────────────
-def country_keyboard():
-    kb = types.InlineKeyboardMarkup()
-    items = list(COUNTRIES.items())
-    # 2 per row, "All Countries" (key 20) full width at the bottom
-    pairs = items[:-1]
-    for i in range(0, len(pairs), 2):
-        row = []
-        for key, (name, _) in pairs[i:i + 2]:
-            row.append(types.InlineKeyboardButton(name, callback_data=f"c:{key}"))
-        kb.row(*row)
-    kb.add(types.InlineKeyboardButton("🌍 All Countries", callback_data="c:20"))
-    return kb
-
-
-def menu_text():
-    return (
-        "✨ <b>Name / Combo Generator</b>\n\n"
-        "Pick a country to begin.\n"
-        "Output format: <code>NameNumber:NameNumber</code>"
-    )
-
-
-def confirm_keyboard():
-    kb = types.InlineKeyboardMarkup()
-    kb.row(
-        types.InlineKeyboardButton("🚀 Generate", callback_data="go"),
-        types.InlineKeyboardButton("✖ Cancel", callback_data="cancel"),
-    )
-    return kb
-
-
-def send_menu(chat_id, edit_msg=None):
-    if edit_msg is not None:
-        try:
-            bot.edit_message_text(menu_text(), chat_id, edit_msg, reply_markup=country_keyboard())
-            return
-        except Exception:
-            pass
-    bot.send_message(chat_id, menu_text(), reply_markup=country_keyboard())
-
-
-# ── Handlers ─────────────────────────────────────────────────────────────────
-@bot.message_handler(commands=["start"])
-def on_start(message):
-    uid = message.from_user.id
-    track_user(message.from_user)
-    _state.pop(uid, None)
-    miss = missing_channels(uid)
-    if miss:
-        send_gate(message.chat.id, miss)
-        return
-    _st(uid)
-    send_menu(message.chat.id)
-
-
-@bot.callback_query_handler(func=lambda c: c.data == "gate:check")
-def on_gate_check(call):
-    uid = call.from_user.id
-    miss = missing_channels(uid)
-    if miss:
-        bot.answer_callback_query(call.id, f"Still {len(miss)} channel(s) to join ❌", show_alert=True)
-        send_gate(call.message.chat.id, miss, edit_msg=call.message.message_id)
-        return
-    bot.answer_callback_query(call.id, "Verified ✅")
-    _st(uid)
-    send_menu(call.message.chat.id, edit_msg=call.message.message_id)
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("c:"))
-def on_country(call):
-    uid = call.from_user.id
-    # re-gate on every action — no sneaking past by leaving the channel
-    miss = missing_channels(uid)
-    if miss:
-        bot.answer_callback_query(call.id, "Join the channels first ❌", show_alert=True)
-        send_gate(call.message.chat.id, miss, edit_msg=call.message.message_id)
-        return
-
-    key = call.data.split(":", 1)[1]
-    if key not in COUNTRIES:
-        bot.answer_callback_query(call.id, "Unknown country")
-        return
-
-    st = _st(uid)
-    st["country"] = key
-    st["step"] = "amount"
-    bot.answer_callback_query(call.id)
-    bot.edit_message_text(
-        f"🌐 <b>{COUNTRIES[key][0]}</b> selected.\n\n"
-        f"How many names? Send a number <b>(1–{MAX_AMOUNT:,})</b>.",
-        call.message.chat.id, call.message.message_id,
-    )
-
-
-@bot.callback_query_handler(func=lambda c: c.data == "cancel")
-def on_cancel(call):
-    uid = call.from_user.id
-    _state.pop(uid, None)
-    bot.answer_callback_query(call.id, "Cancelled")
-    _st(uid)
-    send_menu(call.message.chat.id, edit_msg=call.message.message_id)
-
-
-@bot.callback_query_handler(func=lambda c: c.data == "go")
-def on_go(call):
-    uid = call.from_user.id
-    miss = missing_channels(uid)
-    if miss:
-        bot.answer_callback_query(call.id, "Join the channels first ❌", show_alert=True)
-        send_gate(call.message.chat.id, miss, edit_msg=call.message.message_id)
-        return
-
-    st = _st(uid)
-    if st.get("step") != "confirm" or not st.get("country"):
-        bot.answer_callback_query(call.id, "Start over with /start")
-        return
-
-    bot.answer_callback_query(call.id, "Generating…")
-    bot.edit_message_text("⏳ Generating, hold on…", call.message.chat.id, call.message.message_id)
-
-    country_key = st["country"]
-    amount = st["amount"]
-    number_range = st["range"]
-
-    lines, counts = build_combos(country_key, amount, number_range)
-    total = len(lines)
-
-    if total == 0:
-        bot.send_message(call.message.chat.id, "Nothing generated. Try again with /start.")
-        _state.pop(uid, None)
-        return
-
-    preview = "\n".join(lines[:PREVIEW_COUNT])
-    breakdown = "\n".join(f"  • {k}: <b>{v:,}</b>" for k, v in counts.items())
-    start, end = number_range
-
-    caption = (
-        "✅ <b>Done</b>\n\n"
-        f"Country: <b>{COUNTRIES[country_key][0]}</b>\n"
-        f"Range: <b>{start}-{end}</b>\n"
-        f"Total: <b>{total:,}</b>\n\n"
-        f"{breakdown}\n\n"
-        f"<b>Preview</b>\n<code>{preview}</code>"
-    )
-
-    buf = io.BytesIO(("\n".join(lines) + "\n").encode("utf-8"))
-    buf.name = f"combos_{COUNTRIES[country_key][0].replace(' ', '_')}_{total}.txt"
-
-    bot.send_document(call.message.chat.id, buf, caption=caption)
-    bot.send_message(call.message.chat.id, "Run again? /start")
-    bump_generated(total)
-    _state.pop(uid, None)
-
-
-# ── Admin panel ──────────────────────────────────────────────────────────────
-def admin_panel_text():
-    users = len(_data["users"])
-    return (
-        "🛠 <b>Admin Panel</b>\n\n"
-        f"👥 Users: <b>{users:,}</b>\n"
-        f"🧮 Combos generated: <b>{_data['total_generated']:,}</b>\n"
-        f"🏃 Runs: <b>{_data['total_runs']:,}</b>\n"
-        f"📢 Channels: <b>{len(CHANNELS)}</b>"
-    )
-
-
-def admin_keyboard():
-    kb = types.InlineKeyboardMarkup()
-    kb.row(
-        types.InlineKeyboardButton("📊 Refresh", callback_data="adm:stats"),
-        types.InlineKeyboardButton("📣 Broadcast", callback_data="adm:bc"),
-    )
-    kb.row(
-        types.InlineKeyboardButton("📢 Channels", callback_data="adm:ch"),
-        types.InlineKeyboardButton("✖ Close", callback_data="adm:close"),
-    )
-    return kb
-
-
-@bot.message_handler(commands=["admin"])
-def on_admin(message):
-    uid = message.from_user.id
-    if not is_admin(uid):
-        return  # silent — non-admins never learn it exists
-    bot.send_message(message.chat.id, admin_panel_text(), reply_markup=admin_keyboard())
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("adm:"))
-def on_admin_cb(call):
-    uid = call.from_user.id
-    if not is_admin(uid):
-        bot.answer_callback_query(call.id, "Not authorized")
-        return
-
-    action = call.data.split(":", 1)[1]
-    cid, mid = call.message.chat.id, call.message.message_id
-
-    if action == "stats":
-        bot.answer_callback_query(call.id, "Refreshed")
-        try:
-            bot.edit_message_text(admin_panel_text(), cid, mid, reply_markup=admin_keyboard())
-        except Exception:
-            pass
-
-    elif action == "ch":
-        bot.answer_callback_query(call.id)
-        lines = "\n".join(f"  • {c['title']} — {c['username']}" for c in CHANNELS) or "  (none)"
-        bot.edit_message_text(
-            f"📢 <b>Gate Channels</b>\n\n{lines}",
-            cid, mid, reply_markup=admin_keyboard(),
-        )
-
-    elif action == "bc":
-        _awaiting_broadcast.add(uid)
-        bot.answer_callback_query(call.id)
-        bot.edit_message_text(
-            "📣 <b>Broadcast</b>\n\nSend the message now. It goes to every known user.\n"
-            "Send /cancel_bc to abort.",
-            cid, mid,
-        )
-
-    elif action == "close":
-        _awaiting_broadcast.discard(uid)
-        bot.answer_callback_query(call.id, "Closed")
-        try:
-            bot.delete_message(cid, mid)
-        except Exception:
-            pass
-
-
-@bot.message_handler(commands=["cancel_bc"])
-def on_cancel_bc(message):
-    if is_admin(message.from_user.id):
-        _awaiting_broadcast.discard(message.from_user.id)
-        bot.reply_to(message, "Broadcast cancelled.")
-
-
-def do_broadcast(admin_chat_id, message):
-    ids = list(_data["users"].keys())
-    sent = failed = 0
-    for uid_str in ids:
-        try:
-            bot.copy_message(int(uid_str), message.chat.id, message.message_id)
-            sent += 1
-        except Exception:
-            failed += 1
-        if (sent + failed) % 25 == 0:
-            time.sleep(1)  # stay under Telegram's ~30 msg/s
-    bot.send_message(
-        admin_chat_id,
-        f"📣 <b>Broadcast done</b>\n✅ Sent: <b>{sent}</b>\n❌ Failed: <b>{failed}</b>",
-    )
-
-
-@bot.message_handler(func=lambda m: True, content_types=["text"])
-def on_text(message):
-    uid = message.from_user.id
-
-    # Admin broadcast capture takes priority over any user flow.
-    if uid in _awaiting_broadcast and is_admin(uid):
-        _awaiting_broadcast.discard(uid)
-        bot.reply_to(message, "Sending…")
-        do_broadcast(message.chat.id, message)
-        return
-
-    st = _state.get(uid)
-    if not st:
-        return  # no active flow; ignore (or nudge)
-
-    text = message.text.strip()
-
-    if st["step"] == "amount":
-        if not text.isdigit():
-            bot.reply_to(message, "Send a plain number, e.g. <code>500</code>.")
-            return
-        amount = int(text)
-        if amount <= 0 or amount > MAX_AMOUNT:
-            bot.reply_to(message, f"Out of range. Use 1–{MAX_AMOUNT:,}.")
-            return
-        st["amount"] = amount
-        st["step"] = "range"
-        bot.send_message(
-            message.chat.id,
-            "🔢 Number suffix range?\n"
-            "Send like <code>100-999</code> (or <code>skip</code> for default).",
-        )
-        return
-
-    if st["step"] == "range":
-        if text.lower() == "skip":
-            st["range"] = DEFAULT_RANGE
-        else:
-            try:
-                start, end = (int(x) for x in text.split("-"))
-                if start < 0 or end < start:
-                    raise ValueError
-                st["range"] = (start, end)
-            except Exception:
-                bot.reply_to(message, "Bad range. Example: <code>100-999</code>.")
-                return
-        st["step"] = "confirm"
-        start, end = st["range"]
-        bot.send_message(
-            message.chat.id,
-            "🧾 <b>Review</b>\n\n"
-            f"Country: <b>{COUNTRIES[st['country']][0]}</b>\n"
-            f"Amount: <b>{st['amount']:,}</b>\n"
-            f"Range: <b>{start}-{end}</b>\n"
-            f"Format: <code>NameNumber:NameNumber</code>",
-            reply_markup=confirm_keyboard(),
-        )
-        return
+    print("  All channels reachable.\n" if ok else
+          "\n  Fix: add the bot to each channel/group AND make it admin,\n"
+          "       and check the @username spelling.\n")
 
 
 def main():
     load_data()
     preflight()
-    log.info("polling started — send /start to the bot")
+    log.info("polling started — send /start")
     bot.infinity_polling(skip_pending=True, timeout=30)
 
 
