@@ -1149,7 +1149,7 @@ class BulkLiveDashboard:
             return [
                 _ctr(_clip(f'{WH}{val}{RST}', cwidth), cwidth),
                 _ctr(_clip(f'{DIM}{label}{RST}', cwidth), cwidth),
-                _ctr(_clip(sub, cwidth), cwidth),
+                _ctr(sub, cwidth),
             ]
 
         cells = [_cell(v, l, sb, widths[i]) for i, (v, l, sb) in enumerate(stat_data)]
