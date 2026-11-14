@@ -84,6 +84,8 @@ CHANNELS = [
 MAX_AMOUNT = 50_000
 PREVIEW_COUNT = 8
 DEFAULT_RANGE = (100, 999)
+COOLDOWN_SECONDS = 30 * 60   # wait between generations (admins exempt)
+FEEDBACK_KEEP = 50           # how many feedback entries to retain
 
 AMOUNT_PRESETS = [100, 250, 500, 1000, 2500, 5000]
 RANGE_PRESETS = [(1, 99), (10, 99), (100, 999), (1000, 9999)]
@@ -123,9 +125,10 @@ if not BOT_TOKEN:
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# step: country | amount | amount_custom | range | range_custom | confirm
+# step: country | amount | amount_custom | range | range_custom | confirm | feedback
 _state: dict[int, dict] = {}
 _awaiting_broadcast: set[int] = set()
+_awaiting_reply: dict[int, int] = {}   # admin_uid -> target_uid for feedback replies
 
 
 def _st(uid: int) -> dict:
@@ -137,7 +140,7 @@ def is_admin(uid: int) -> bool:
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────
-_data = {"users": {}, "total_generated": 0, "total_runs": 0}
+_data = {"users": {}, "total_generated": 0, "total_runs": 0, "feedback": []}
 
 
 def load_data():
@@ -146,6 +149,7 @@ def load_data():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             _data.update(json.load(f))
         _data.setdefault("users", {})
+        _data.setdefault("feedback", [])
     except Exception:
         pass
 
@@ -179,6 +183,37 @@ def bump_generated(uid, n):
     rec = _data["users"].setdefault(str(uid), {})
     rec["generated"] = rec.get("generated", 0) + int(n)
     rec["runs"] = rec.get("runs", 0) + 1
+    save_data()
+
+
+def cooldown_left(uid):
+    """Seconds remaining before this user may generate again (0 = ready)."""
+    if is_admin(uid):
+        return 0
+    last = _data["users"].get(str(uid), {}).get("last_gen", 0)
+    left = COOLDOWN_SECONDS - (int(time.time()) - last)
+    return max(0, left)
+
+
+def mark_gen(uid):
+    _data["users"].setdefault(str(uid), {})["last_gen"] = int(time.time())
+    save_data()
+
+
+def fmt_left(seconds):
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m {s:02d}s" if m else f"{s}s"
+
+
+def add_feedback(user, text):
+    _data["feedback"].append({
+        "uid": user.id,
+        "name": getattr(user, "first_name", None),
+        "username": getattr(user, "username", None),
+        "text": text[:1000],
+        "ts": int(time.time()),
+    })
+    _data["feedback"] = _data["feedback"][-FEEDBACK_KEEP:]
     save_data()
 
 
@@ -310,8 +345,9 @@ def main_menu_kb(uid):
     kb.add(types.InlineKeyboardButton("🚀  Generate Combos", callback_data="nav:gen"))
     kb.row(
         types.InlineKeyboardButton("📊  My Stats", callback_data="nav:stats"),
-        types.InlineKeyboardButton("❓  Help", callback_data="nav:help"),
+        types.InlineKeyboardButton("💬  Feedback", callback_data="nav:feedback"),
     )
+    kb.add(types.InlineKeyboardButton("❓  Help", callback_data="nav:help"))
     if is_admin(uid):
         kb.add(types.InlineKeyboardButton("🛠  Admin Panel", callback_data="adm:open"))
     return kb
@@ -466,8 +502,22 @@ def on_nav(call):
         _state.pop(uid, None)
         show_menu(cid, uid, edit=mid)
     elif what == "gen":
+        left = cooldown_left(uid)
+        if left:
+            bot.answer_callback_query(
+                call.id, f"⏳ Cooldown — wait {fmt_left(left)}", show_alert=True)
+            return
         _st(uid)["step"] = "country"
         show_country(cid, edit=mid)
+    elif what == "feedback":
+        _st(uid)["step"] = "feedback"
+        text = header(
+            "💬 <b>Feedback</b>\n\nSend your message, suggestion or bug report.\n"
+            "It goes straight to the admins."
+        )
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("« Back", callback_data="nav:menu"))
+        _safe_edit(cid, mid, text, kb)
     elif what == "stats":
         rec = _data["users"].get(str(uid), {})
         since = rec.get("first_seen")
@@ -581,7 +631,14 @@ def on_go(call):
         bot.answer_callback_query(call.id, "Start over with /start")
         return
 
+    left = cooldown_left(uid)
+    if left:
+        bot.answer_callback_query(
+            call.id, f"⏳ Cooldown — wait {fmt_left(left)}", show_alert=True)
+        return
+
     bot.answer_callback_query(call.id, "Working…")
+    mark_gen(uid)   # stamp now so the cooldown starts immediately
     for frame in ("⏳ Spinning up the generator…",
                   "🧬 Building combos…",
                   "📦 Packing your file…"):
@@ -623,12 +680,39 @@ def on_go(call):
     _state.pop(uid, None)
 
 
+# ── Feedback relay ───────────────────────────────────────────────────────────
+def _uname(fb_or_user):
+    u = fb_or_user.get("username") if isinstance(fb_or_user, dict) else getattr(fb_or_user, "username", None)
+    return f"@{u}" if u else "—"
+
+
+def relay_feedback(user, text):
+    """Push a user's feedback to every admin live, with a Reply button."""
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("↩️ Reply", callback_data=f"fbreply:{user.id}"))
+    body = header(
+        "💬 <b>New Feedback</b>\n\n"
+        + card([
+            ("From", getattr(user, "first_name", "") or "—"),
+            ("User", _uname(user)),
+            ("ID", str(user.id)),
+        ])
+        + f"\n{text}"
+    )
+    for admin in ADMIN_IDS:
+        try:
+            bot.send_message(admin, body, reply_markup=kb)
+        except Exception:
+            pass
+
+
 # ── Admin panel ──────────────────────────────────────────────────────────────
 def admin_text():
     return header("🛠 <b>Admin Panel</b>\n\n" + card([
         ("Users", f"{len(_data['users']):,}"),
         ("Combos", f"{_data['total_generated']:,}"),
         ("Runs", f"{_data['total_runs']:,}"),
+        ("Feedback", str(len(_data["feedback"]))),
         ("Channels", str(len(CHANNELS))),
     ]))
 
@@ -640,9 +724,10 @@ def admin_kb():
         types.InlineKeyboardButton("📣 Broadcast", callback_data="adm:bc"),
     )
     kb.row(
+        types.InlineKeyboardButton("📥 Feedback", callback_data="adm:fb"),
         types.InlineKeyboardButton("📢 Channels", callback_data="adm:ch"),
-        types.InlineKeyboardButton("🏠 Menu", callback_data="nav:menu"),
     )
+    kb.add(types.InlineKeyboardButton("🏠 Menu", callback_data="nav:menu"))
     return kb
 
 
@@ -669,6 +754,25 @@ def on_admin_cb(call):
         bot.answer_callback_query(call.id)
         rows = [(c["title"], c["username"]) for c in CHANNELS] or [("—", "none")]
         _safe_edit(cid, mid, header("📢 <b>Gate Channels</b>\n\n" + card(rows)), admin_kb())
+    elif action == "fb":
+        bot.answer_callback_query(call.id)
+        recent = list(reversed(_data["feedback"][-8:]))
+        if not recent:
+            body = "📥 <b>Feedback Inbox</b>\n\n<i>Nothing yet.</i>"
+            kb = admin_kb()
+        else:
+            chunks = []
+            kb = types.InlineKeyboardMarkup()
+            for fb in recent:
+                when = time.strftime("%m-%d %H:%M", time.localtime(fb["ts"]))
+                who = fb.get("name") or _uname(fb)
+                snippet = fb["text"] if len(fb["text"]) <= 220 else fb["text"][:220] + "…"
+                chunks.append(f"<b>{who}</b> <i>{when}</i>\n{snippet}")
+                kb.add(types.InlineKeyboardButton(
+                    f"↩️ Reply to {who}", callback_data=f"fbreply:{fb['uid']}"))
+            body = "📥 <b>Feedback Inbox</b>\n\n" + "\n\n".join(chunks)
+            kb.add(types.InlineKeyboardButton("« Back", callback_data="adm:open"))
+        _safe_edit(cid, mid, header(body), kb)
     elif action == "bc":
         _awaiting_broadcast.add(uid)
         bot.answer_callback_query(call.id)
@@ -678,11 +782,26 @@ def on_admin_cb(call):
         ))
 
 
+@bot.callback_query_handler(func=lambda c: c.data.startswith("fbreply:"))
+def on_fb_reply(call):
+    uid = call.from_user.id
+    if not is_admin(uid):
+        bot.answer_callback_query(call.id, "Not authorized")
+        return
+    target = int(call.data.split(":", 1)[1])
+    _awaiting_reply[uid] = target
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, header(
+        f"↩️ <b>Reply mode</b>\n\nSend your reply — it goes to user <code>{target}</code>.\n"
+        "/cancel_bc to abort."))
+
+
 @bot.message_handler(commands=["cancel_bc"])
 def on_cancel_bc(message):
     if is_admin(message.from_user.id):
         _awaiting_broadcast.discard(message.from_user.id)
-        bot.reply_to(message, "Broadcast cancelled.")
+        _awaiting_reply.pop(message.from_user.id, None)
+        bot.reply_to(message, "Cancelled.")
 
 
 def do_broadcast(admin_chat_id, message):
@@ -711,10 +830,30 @@ def on_text(message):
         do_broadcast(message.chat.id, message)
         return
 
+    # Admin replying to a user's feedback
+    if uid in _awaiting_reply and is_admin(uid):
+        target = _awaiting_reply.pop(uid)
+        try:
+            bot.send_message(target, header(
+                "💬 <b>Reply from admin</b>\n\n" + message.text.strip()))
+            bot.reply_to(message, "✅ Reply delivered.")
+        except Exception as e:
+            bot.reply_to(message, f"❌ Could not deliver: {e}")
+        return
+
     st = _state.get(uid)
     if not st:
         return
     text = message.text.strip()
+
+    if st["step"] == "feedback":
+        _state.pop(uid, None)
+        add_feedback(message.from_user, text)
+        relay_feedback(message.from_user, text)
+        bot.send_message(message.chat.id, header(
+            "✅ <b>Feedback sent</b>\n\nThanks — the admins got it."),
+            reply_markup=main_menu_kb(uid))
+        return
 
     if st["step"] == "amount_custom":
         if not text.isdigit():
