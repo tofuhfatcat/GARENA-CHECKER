@@ -46,9 +46,17 @@ _auto_install()
 
 import io
 import json
+import logging
 import os
 import random
 import time
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("bot")
 
 import names
 import telebot
@@ -228,7 +236,7 @@ def build_combos(country_key, amount, number_range):
 
 # ── Force-join gate ──────────────────────────────────────────────────────────
 def missing_channels(user_id):
-    """Return channels the user has NOT joined. On API error, treat as not joined."""
+    """Return channels the user has NOT joined. On API error, fail closed + log why."""
     missing = []
     for ch in CHANNELS:
         try:
@@ -238,10 +246,41 @@ def missing_channels(user_id):
                 missing.append(ch)
             elif status == "restricted" and not getattr(m, "is_member", False):
                 missing.append(ch)
-        except Exception:
-            # bot not admin in channel, or channel unreachable — fail closed
+        except Exception as e:
+            # Most common: bot is not an admin/member of this channel, so it
+            # literally cannot read membership. Shows up as the gate never
+            # opening. Log it loud so it's obvious, then fail closed.
+            log.warning("gate check failed for %s — is the bot admin there? (%s)",
+                        ch["username"], e)
             missing.append(ch)
     return missing
+
+
+def preflight():
+    """Verify token + each channel is reachable by the bot. Prints a clear report."""
+    try:
+        me = bot.get_me()
+        log.info("connected as @%s (id %s)", me.username, me.id)
+    except Exception as e:
+        log.error("getMe failed — bad token or no network: %s", e)
+        raise SystemExit(1)
+
+    print("\n  Channel preflight:")
+    ok = True
+    for ch in CHANNELS:
+        try:
+            chat = bot.get_chat(ch["username"])
+            # Can the bot read members here? Checking its own membership proves it.
+            bot.get_chat_member(ch["username"], me.id)
+            print(f"    OK        {ch['username']}  ({chat.type})")
+        except Exception as e:
+            ok = False
+            print(f"    NOT-OK    {ch['username']}  -> {e}")
+    if not ok:
+        print("\n  Fix: add the bot to each channel/group above AND make it an admin,\n"
+              "       then check the @username is spelled exactly right.\n")
+    else:
+        print("  All channels reachable.\n")
 
 
 def gate_keyboard(missing):
@@ -585,7 +624,8 @@ def on_text(message):
 
 def main():
     load_data()
-    print("Bot running. Ctrl+C to stop.")
+    preflight()
+    log.info("polling started — send /start to the bot")
     bot.infinity_polling(skip_pending=True, timeout=30)
 
 
