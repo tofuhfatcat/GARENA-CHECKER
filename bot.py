@@ -71,8 +71,8 @@ ADMIN_IDS = [6654003878]  # FILL: His Telegram user id(s)
 
 DATA_FILE = "bot_data.json"
 
-BRAND = "HESU"                  # header title
-TAGLINE = "COMBO / NAME GENERATOR"
+BRAND = "MLBB UPASS GEN"        # header title
+TAGLINE = "by HESU"
 
 # The bot MUST be admin (or a member) in each channel/group, or get_chat_member
 # cannot read membership and the gate never opens. FILL: His channels.
@@ -88,7 +88,6 @@ COOLDOWN_SECONDS = 30 * 60   # wait between generations (admins exempt)
 FEEDBACK_KEEP = 50           # how many feedback entries to retain
 
 AMOUNT_PRESETS = [100, 250, 500, 1000, 2500, 5000]
-RANGE_PRESETS = [(1, 999), (1, 99), (100, 999), (1000, 9999)]
 
 # (name, locale, flag)
 COUNTRIES = {
@@ -125,7 +124,7 @@ if not BOT_TOKEN:
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# step: country | amount | amount_custom | range | range_custom | confirm | feedback
+# step: country | amount | amount_custom | confirm | feedback
 _state: dict[int, dict] = {}
 _awaiting_broadcast: set[int] = set()
 _awaiting_reply: dict[int, int] = {}   # admin_uid -> target_uid for feedback replies
@@ -385,21 +384,11 @@ def amount_kb():
     return kb
 
 
-def range_kb():
-    kb = types.InlineKeyboardMarkup()
-    btns = [types.InlineKeyboardButton(f"{a}-{b}", callback_data=f"rng:{a}-{b}") for a, b in RANGE_PRESETS]
-    for i in range(0, len(btns), 2):
-        kb.row(*btns[i:i + 2])
-    kb.add(types.InlineKeyboardButton("✏️  Custom range", callback_data="rng:custom"))
-    kb.add(types.InlineKeyboardButton("« Back", callback_data="step:amount"))
-    return kb
-
-
 def confirm_kb():
     kb = types.InlineKeyboardMarkup()
     kb.row(
         types.InlineKeyboardButton("🚀  Generate", callback_data="go"),
-        types.InlineKeyboardButton("« Back", callback_data="step:range"),
+        types.InlineKeyboardButton("« Back", callback_data="step:amount"),
     )
     kb.add(types.InlineKeyboardButton("✖  Cancel", callback_data="nav:menu"))
     return kb
@@ -413,27 +402,16 @@ def show_menu(chat_id, uid, edit=None):
 
 
 def show_country(chat_id, edit=None):
-    text = header("🚀 <b>Step 1/3 — Country</b>\n\nChoose a source locale:")
+    text = header("🚀 <b>Step 1/2 — Country</b>\n\nChoose a source locale:")
     _safe_edit(chat_id, edit, text, country_kb()) if edit else \
         bot.send_message(chat_id, text, reply_markup=country_kb())
 
 
 def show_amount(chat_id, uid, edit=None):
     name, _loc, flag = COUNTRIES[_st(uid)["country"]]
-    text = header(f"🔢 <b>Step 2/3 — Amount</b>\n\n{flag} <b>{name}</b>\nHow many combos?")
+    text = header(f"🔢 <b>Step 2/2 — Amount</b>\n\n{flag} <b>{name}</b>\nHow many combos?\n<i>Range fixed at 1-999.</i>")
     _safe_edit(chat_id, edit, text, amount_kb()) if edit else \
         bot.send_message(chat_id, text, reply_markup=amount_kb())
-
-
-def show_range(chat_id, uid, edit=None):
-    st = _st(uid)
-    name, _loc, flag = COUNTRIES[st["country"]]
-    text = header(
-        f"🎲 <b>Step 3/3 — Number Range</b>\n\n{flag} <b>{name}</b> · "
-        f"<b>{st['amount']:,}</b> combos\nPick the suffix range:"
-    )
-    _safe_edit(chat_id, edit, text, range_kb()) if edit else \
-        bot.send_message(chat_id, text, reply_markup=range_kb())
 
 
 def show_confirm(chat_id, uid, edit=None):
@@ -556,9 +534,6 @@ def on_step(call):
     if which == "amount":
         _st(uid)["step"] = "amount"
         show_amount(cid, uid, edit=mid)
-    elif which == "range":
-        _st(uid)["step"] = "range"
-        show_range(cid, uid, edit=mid)
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("c:"))
@@ -593,30 +568,9 @@ def on_amount(call):
         return
     st = _st(uid)
     st["amount"] = int(val)
-    st["step"] = "range"
-    bot.answer_callback_query(call.id, f"{int(val):,} ✓")
-    show_range(cid, uid, edit=mid)
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("rng:"))
-def on_range(call):
-    if guard(call):
-        return
-    uid = call.from_user.id
-    cid, mid = call.message.chat.id, call.message.message_id
-    val = call.data.split(":", 1)[1]
-    if val == "custom":
-        _st(uid)["step"] = "range_custom"
-        bot.answer_callback_query(call.id)
-        _safe_edit(cid, mid, header(
-            "✏️ <b>Custom Range</b>\n\nSend like <code>100-999</code>."
-        ))
-        return
-    a, b = (int(x) for x in val.split("-"))
-    st = _st(uid)
-    st["range"] = (a, b)
+    st["range"] = DEFAULT_RANGE
     st["step"] = "confirm"
-    bot.answer_callback_query(call.id, f"{a}-{b} ✓")
+    bot.answer_callback_query(call.id, f"{int(val):,} ✓")
     show_confirm(cid, uid, edit=mid)
 
 
@@ -665,7 +619,8 @@ def on_go(call):
     )
 
     buf = io.BytesIO(("\n".join(lines) + "\n").encode("utf-8"))
-    buf.name = f"{BRAND.lower()}_{name.replace(' ', '_')}_{total}.txt"
+    slug = BRAND.lower().replace(" ", "_")
+    buf.name = f"{slug}_{name.replace(' ', '_')}_{total}.txt"
 
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("🔁  Generate Again", callback_data="nav:gen"))
@@ -864,19 +819,7 @@ def on_text(message):
             bot.reply_to(message, f"Out of range. Use 1–{MAX_AMOUNT:,}.")
             return
         st["amount"] = amount
-        st["step"] = "range"
-        show_range(message.chat.id, uid)
-        return
-
-    if st["step"] == "range_custom":
-        try:
-            a, b = (int(x) for x in text.split("-"))
-            if a < 0 or b < a:
-                raise ValueError
-        except Exception:
-            bot.reply_to(message, "Bad range. Example: <code>100-999</code>.")
-            return
-        st["range"] = (a, b)
+        st["range"] = DEFAULT_RANGE
         st["step"] = "confirm"
         show_confirm(message.chat.id, uid)
         return
