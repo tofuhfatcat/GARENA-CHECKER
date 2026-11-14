@@ -1252,7 +1252,7 @@ class BulkLiveDashboard:
             lvl_rows.append(f' {AM}│{RST} {AM}TOP HITS (Lv 100+){RST}')
             for lvl, acct, tag, is_cln in top_hits[:3]:
                 tc = GN if is_cln else YL
-                lvl_rows.append(f'   {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
+                lvl_rows.append(f'  {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
 
         feed_rows = []
         feed_text_w = max(IW - half - 1 - 13, 8)
