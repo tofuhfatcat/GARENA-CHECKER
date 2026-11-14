@@ -45,9 +45,10 @@ _auto_install()
 # ─────────────────────────────────────────────────────────────────────────────
 
 import io
+import json
 import os
 import random
-import tempfile
+import time
 
 import names
 import telebot
@@ -56,6 +57,13 @@ from telebot import types
 
 # ── Config — tune here ───────────────────────────────────────────────────────
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")  # FILL: bot token from @BotFather
+
+# Admin user ids — only these can open /admin. FILL: add His Telegram user id.
+ADMIN_IDS = [
+    # 123456789,
+]
+
+DATA_FILE = "bot_data.json"  # tiny json store: known users + counters
 
 # Channels the user must join before the bot unlocks.
 # The bot MUST be an admin (or at least a member) in each channel, or
@@ -107,10 +115,58 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 # Per-user flow state. step: menu | amount | range | confirm
 _state: dict[int, dict] = {}
+# Admins waiting to send a broadcast message.
+_awaiting_broadcast: set[int] = set()
 
 
 def _st(uid: int) -> dict:
     return _state.setdefault(uid, {"step": "menu", "country": None, "amount": None, "range": None})
+
+
+def is_admin(uid: int) -> bool:
+    return uid in ADMIN_IDS
+
+
+# ── Persistence (users + counters) ───────────────────────────────────────────
+_data = {"users": {}, "total_generated": 0, "total_runs": 0}
+
+
+def load_data():
+    global _data
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        _data.update(loaded)
+        _data.setdefault("users", {})
+    except Exception:
+        pass
+
+
+def save_data():
+    try:
+        tmp = DATA_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_data, f)
+        os.replace(tmp, DATA_FILE)
+    except Exception:
+        pass
+
+
+def track_user(user):
+    uid = str(user.id)
+    rec = _data["users"].get(uid, {})
+    rec["username"] = getattr(user, "username", None)
+    rec["name"] = getattr(user, "first_name", None)
+    rec.setdefault("first_seen", int(time.time()))
+    rec["last_seen"] = int(time.time())
+    _data["users"][uid] = rec
+    save_data()
+
+
+def bump_generated(n):
+    _data["total_generated"] += int(n)
+    _data["total_runs"] += 1
+    save_data()
 
 
 # ── Generation core ──────────────────────────────────────────────────────────
@@ -258,6 +314,7 @@ def send_menu(chat_id, edit_msg=None):
 @bot.message_handler(commands=["start"])
 def on_start(message):
     uid = message.from_user.id
+    track_user(message.from_user)
     _state.pop(uid, None)
     miss = missing_channels(uid)
     if miss:
@@ -362,12 +419,121 @@ def on_go(call):
 
     bot.send_document(call.message.chat.id, buf, caption=caption)
     bot.send_message(call.message.chat.id, "Run again? /start")
+    bump_generated(total)
     _state.pop(uid, None)
+
+
+# ── Admin panel ──────────────────────────────────────────────────────────────
+def admin_panel_text():
+    users = len(_data["users"])
+    return (
+        "🛠 <b>Admin Panel</b>\n\n"
+        f"👥 Users: <b>{users:,}</b>\n"
+        f"🧮 Combos generated: <b>{_data['total_generated']:,}</b>\n"
+        f"🏃 Runs: <b>{_data['total_runs']:,}</b>\n"
+        f"📢 Channels: <b>{len(CHANNELS)}</b>"
+    )
+
+
+def admin_keyboard():
+    kb = types.InlineKeyboardMarkup()
+    kb.row(
+        types.InlineKeyboardButton("📊 Refresh", callback_data="adm:stats"),
+        types.InlineKeyboardButton("📣 Broadcast", callback_data="adm:bc"),
+    )
+    kb.row(
+        types.InlineKeyboardButton("📢 Channels", callback_data="adm:ch"),
+        types.InlineKeyboardButton("✖ Close", callback_data="adm:close"),
+    )
+    return kb
+
+
+@bot.message_handler(commands=["admin"])
+def on_admin(message):
+    uid = message.from_user.id
+    if not is_admin(uid):
+        return  # silent — non-admins never learn it exists
+    bot.send_message(message.chat.id, admin_panel_text(), reply_markup=admin_keyboard())
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("adm:"))
+def on_admin_cb(call):
+    uid = call.from_user.id
+    if not is_admin(uid):
+        bot.answer_callback_query(call.id, "Not authorized")
+        return
+
+    action = call.data.split(":", 1)[1]
+    cid, mid = call.message.chat.id, call.message.message_id
+
+    if action == "stats":
+        bot.answer_callback_query(call.id, "Refreshed")
+        try:
+            bot.edit_message_text(admin_panel_text(), cid, mid, reply_markup=admin_keyboard())
+        except Exception:
+            pass
+
+    elif action == "ch":
+        bot.answer_callback_query(call.id)
+        lines = "\n".join(f"  • {c['title']} — {c['username']}" for c in CHANNELS) or "  (none)"
+        bot.edit_message_text(
+            f"📢 <b>Gate Channels</b>\n\n{lines}",
+            cid, mid, reply_markup=admin_keyboard(),
+        )
+
+    elif action == "bc":
+        _awaiting_broadcast.add(uid)
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            "📣 <b>Broadcast</b>\n\nSend the message now. It goes to every known user.\n"
+            "Send /cancel_bc to abort.",
+            cid, mid,
+        )
+
+    elif action == "close":
+        _awaiting_broadcast.discard(uid)
+        bot.answer_callback_query(call.id, "Closed")
+        try:
+            bot.delete_message(cid, mid)
+        except Exception:
+            pass
+
+
+@bot.message_handler(commands=["cancel_bc"])
+def on_cancel_bc(message):
+    if is_admin(message.from_user.id):
+        _awaiting_broadcast.discard(message.from_user.id)
+        bot.reply_to(message, "Broadcast cancelled.")
+
+
+def do_broadcast(admin_chat_id, message):
+    ids = list(_data["users"].keys())
+    sent = failed = 0
+    for uid_str in ids:
+        try:
+            bot.copy_message(int(uid_str), message.chat.id, message.message_id)
+            sent += 1
+        except Exception:
+            failed += 1
+        if (sent + failed) % 25 == 0:
+            time.sleep(1)  # stay under Telegram's ~30 msg/s
+    bot.send_message(
+        admin_chat_id,
+        f"📣 <b>Broadcast done</b>\n✅ Sent: <b>{sent}</b>\n❌ Failed: <b>{failed}</b>",
+    )
 
 
 @bot.message_handler(func=lambda m: True, content_types=["text"])
 def on_text(message):
     uid = message.from_user.id
+
+    # Admin broadcast capture takes priority over any user flow.
+    if uid in _awaiting_broadcast and is_admin(uid):
+        _awaiting_broadcast.discard(uid)
+        bot.reply_to(message, "Sending…")
+        do_broadcast(message.chat.id, message)
+        return
+
     st = _state.get(uid)
     if not st:
         return  # no active flow; ignore (or nudge)
@@ -418,6 +584,7 @@ def on_text(message):
 
 
 def main():
+    load_data()
     print("Bot running. Ctrl+C to stop.")
     bot.infinity_polling(skip_pending=True, timeout=30)
 
