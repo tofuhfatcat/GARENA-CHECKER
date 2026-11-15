@@ -933,14 +933,15 @@ class BulkLiveDashboard:
         m = _BULK_MODE
 
         if m == 'full':
-            # display_codm_info owns printing; just do a timed stats refresh
+            # Redraw on every result so a checked account shows in the feed
+            # immediately — no 300ms throttle. Render is pure string work and
+            # the write is held under _dash_print_lock, so contention across
+            # workers stays bounded.
             with _dash_print_lock:
-                now = time.time()
-                if now - self._last_redraw >= self._redraw_iv:
-                    self._erase()
-                    self._redraw()
-                    _raw_flush()
-                    self._last_redraw = now
+                self._erase()
+                self._redraw()
+                _raw_flush()
+                self._last_redraw = time.time()
             return
 
         # 'semi' / 'none' — compact one-liner
