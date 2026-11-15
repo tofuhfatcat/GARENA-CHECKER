@@ -813,51 +813,34 @@ class BulkLiveDashboard:
             self._dash_lines = txt.count('\n')
             _raw_write(txt)
             _raw_flush()
-        # Background heartbeat: catches terminal resize + keeps the clock /
-        # ETA ticking when the result pipeline is quiet. 200ms is fast enough
-        # for a resize to feel instant, cheap enough to not cost anything.
-        self._heartbeat_stop = threading.Event()
-        def _heartbeat():
-            last_w = self._last_tw
-            while not self._heartbeat_stop.wait(0.2):
+        # Repaint the dashboard the moment the terminal is resized — kernel
+        # sends SIGWINCH, we erase + re-render at the new width. _redraw()
+        # already detects the width change and full-clears, so the handler
+        # just triggers it.
+        self._prev_winch = None
+        if hasattr(signal, 'SIGWINCH'):
+            def _on_winch(sig, frame):
                 try:
-                    _cands = [shutil.get_terminal_size((0, 0)).columns]
-                    import sys as _sys
-                    for _src in (_sys.__stdout__, _sys.__stderr__, _sys.stdout, _sys.stderr):
-                        try:
-                            _cands.append(os.get_terminal_size(_src.fileno()).columns)
-                        except Exception:
-                            pass
-                    try:
-                        _cands.append(console.size.width)
-                    except Exception:
-                        pass
-                    cur_w = max((c for c in _cands if c and c > 0), default=84)
-                except Exception:
-                    cur_w = last_w
-                # Repaint if the terminal was resized OR it's been a while
-                # since the last paint (keeps clock live on idle).
-                need = (cur_w != last_w) or (time.time() - self._last_redraw > 0.5)
-                if need and _dash_print_lock.acquire(blocking=False):
-                    try:
+                    with _dash_print_lock:
                         self._erase()
                         self._redraw()
                         _raw_flush()
                         self._last_redraw = time.time()
-                        last_w = cur_w
-                    finally:
-                        _dash_print_lock.release()
-        self._heartbeat_thread = threading.Thread(target=_heartbeat, daemon=True)
-        self._heartbeat_thread.start()
+                except Exception:
+                    pass
+            try:
+                self._prev_winch = signal.signal(signal.SIGWINCH, _on_winch)
+            except Exception:
+                self._prev_winch = None
 
     def stop(self):
         global _active_dashboard
         _active_dashboard = None
-        try:
-            if getattr(self, '_heartbeat_stop', None):
-                self._heartbeat_stop.set()
-        except Exception:
-            pass
+        if hasattr(signal, 'SIGWINCH') and self._prev_winch is not None:
+            try:
+                signal.signal(signal.SIGWINCH, self._prev_winch)
+            except Exception:
+                pass
         with _dash_print_lock:
             self._erase()
             _raw_flush()
@@ -974,20 +957,15 @@ class BulkLiveDashboard:
         m = _BULK_MODE
 
         if m == 'full':
-            # Non-blocking paint: the FIRST thread to arrive repaints
-            # immediately; concurrent threads skip the paint (their result is
-            # already in self._feed and will land on the next repaint). That
-            # keeps the feed "live" without stacking every worker on
-            # _dash_print_lock — which was starving the pool when 50+ threads
-            # all hit _on_result at once.
-            if _dash_print_lock.acquire(blocking=False):
-                try:
-                    self._erase()
-                    self._redraw()
-                    _raw_flush()
-                    self._last_redraw = time.time()
-                finally:
-                    _dash_print_lock.release()
+            # Redraw on every result so a checked account shows in the feed
+            # immediately — no 300ms throttle. Render is pure string work and
+            # the write is held under _dash_print_lock, so contention across
+            # workers stays bounded.
+            with _dash_print_lock:
+                self._erase()
+                self._redraw()
+                _raw_flush()
+                self._last_redraw = time.time()
             return
 
         # 'semi' / 'none' — compact one-liner
