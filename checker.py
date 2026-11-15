@@ -800,7 +800,7 @@ class BulkLiveDashboard:
         # Redraw state
         self._dash_lines:  int   = 0    # lines the last render occupied
         self._last_redraw: float = 0.0
-        self._redraw_iv:   float = 0.3  # min seconds between redraws
+        self._redraw_iv:   float = 0.05  # min seconds between redraws
         self._last_tw:     int   = 0    # last-rendered terminal width (resize detect)
         self._build_snap()
 
@@ -957,15 +957,18 @@ class BulkLiveDashboard:
         m = _BULK_MODE
 
         if m == 'full':
-            # Redraw on every result so a checked account shows in the feed
-            # immediately — no 300ms throttle. Render is pure string work and
-            # the write is held under _dash_print_lock, so contention across
-            # workers stays bounded.
+            # Repaint quickly after a result lands, but gate on _redraw_iv
+            # (50ms) so 50+ workers don't all serialize on _dash_print_lock
+            # for a full render+write each time — the pool was stalling at
+            # 0/N with the throttle off. Check inside the lock so the gate
+            # itself can't race.
             with _dash_print_lock:
-                self._erase()
-                self._redraw()
-                _raw_flush()
-                self._last_redraw = time.time()
+                now = time.time()
+                if now - self._last_redraw >= self._redraw_iv:
+                    self._erase()
+                    self._redraw()
+                    _raw_flush()
+                    self._last_redraw = now
             return
 
         # 'semi' / 'none' — compact one-liner
