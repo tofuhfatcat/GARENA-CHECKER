@@ -4607,7 +4607,7 @@ def bulk_check(bulk_mode: str = 'full'):
             account, password = account.strip(), password.strip()
             session, datadome_mgr = _get_thread_resources()
             suppress = (_BULK_MODE != 'full')
-            status = processaccount(session, account, password, cookie_manager, datadome_mgr, live_stats, results_manager, file_manager, selected_file, auto_remove, suppress_print=suppress, proxy_manager=proxy_manager if using_proxy else None, defer_transient=True)
+            status = processaccount(session, account, password, cookie_manager, datadome_mgr, live_stats, results_manager, file_manager, selected_file, auto_remove, suppress_print=suppress, proxy_manager=proxy_manager if using_proxy else None)
             return (status, account, {})
         except Exception:
             return ('ERROR', account_line, {})
