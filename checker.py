@@ -2125,11 +2125,24 @@ class DataDomeManager:
                     _ip_block_callback(False)
                 return False
             else:
-                # Silent wait — no "IP WAIT …s" tick in the live feed.
-                # Only the IP Status badge (BLOCKED/CLEAR) flips so the user sees
-                # something is happening, nothing else fills the feed.
+                _last_tick = time.time()
                 while time.time() - start_time < max_wait_time:
                     time.sleep(check_interval)
+                    if time.time() - _last_tick >= 3.0:
+                        if _ip_block_callback:
+                            _ip_block_callback(True)
+                        try:
+                            _elapsed = int(time.time() - start_time)
+                            _ip_now = self.get_current_ip() or 'unknown'
+                            _log_line = f'[dim]····[/dim]  [red]IP WAIT[/red]  [dim]{_elapsed}s  ·  current={_ip_now}[/dim]'
+                            _cb = globals().get('_dashboard_ref')
+                            if _cb:
+                                with _cb._lock:
+                                    _cb.recent.append(_log_line)
+                                    _cb._dirty = True
+                        except Exception:
+                            pass
+                        _last_tick = time.time()
                     current_ip = self.get_current_ip()
                     if current_ip and current_ip != original_ip:
                         if _ip_block_callback:
