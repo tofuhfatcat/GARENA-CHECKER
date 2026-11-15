@@ -257,15 +257,14 @@ def _make_session(pool_size=64):
             default; raise it for very large thread pools.
     """
     s = requests.Session()
-    # Transport-level retries: urllib3 handles these in C with the GIL
-    # released, so bumping read/connect retries here is cheaper than the
-    # python-level retry loop and catches the dead-socket RSTs before
-    # they bubble up as ConnectionError / Timeout.
+    # Transport-level retries: 1 retry on connection errors, with 0.3s
+    # backoff. This is faster than the manual Python-level retry loop,
+    # because urllib3 handles it in C while the GIL is released.
     from urllib3.util.retry import Retry
     retry = Retry(
-        total=5,
-        connect=5,
-        read=3,
+        total=1,
+        connect=1,
+        read=0,
         status=0,
         backoff_factor=0.3,
         status_forcelist=[],
@@ -2250,7 +2249,7 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
             }
             if cookie_header:
                 headers['cookie'] = cookie_header
-            _to = 20 if (proxy_manager and proxy_manager.is_loaded()) else 15
+            _to = 8 if (proxy_manager and proxy_manager.is_loaded()) else 5
             response = session.get(url, headers=headers, params=params, timeout=_to)
             if response.status_code == 403:
                 if proxy_manager and proxy_manager.is_loaded():
@@ -2984,15 +2983,16 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     return 'IP_BLOCKED'
 
             if v1 == 'NETWORK_ERROR':
-                # Silent retry. Rebuild the session (dead keep-alive / stale socket
-                # is the common cause) and rotate datadome/proxy, then retry a bit
-                # longer than the default so a flaky connection resolves itself.
-                if attempt < max_retries + 2:
+                # Silent retry — never emit a "Network Error" row.
+                # Dead keep-alive / stale socket is the common cause, so
+                # rebuild the session (closes every pooled conn), swap
+                # datadome, and keep retrying with no inter-attempt sleep.
+                if attempt < 20:
                     try:
                         session.close()
                     except Exception:
                         pass
-                    session = _make_session()
+                    session = _make_session(pool_size=1)
                     init_ga_cookies(session)
                     datadome_manager.clear_session_datadome(session)
                     if proxy_manager and proxy_manager.is_loaded():
@@ -3000,7 +3000,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                             session.proxies.update(proxy_manager.get_next())
                         except Exception:
                             pass
-                    # Try a fresh datadome cookie too — banned one shows as reset.
                     try:
                         picked_ck = cookie_manager.pick_cookie()
                         if picked_ck:
@@ -3011,13 +3010,18 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                                 datadome_manager.set_session_datadome(session, val)
                     except Exception:
                         pass
-                    time.sleep(random.uniform(0.2, 0.6))
                     continue
-                err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Network Error'}
-                live_stats.update_stats(is_error=True)
-                results_manager.add_account(err_data)
-                live_stats.push_result(success=False, error_reason='Network Error')
-                return 'ERROR'
+                # 20 rebuilds and still no TCP — signal the worker to loop
+                # with a fresh session/cookie, no row, no counter.
+                try:
+                    session.close()
+                except Exception:
+                    pass
+                session = _make_session(pool_size=1)
+                session.cookies.clear()
+                init_ga_cookies(session)
+                datadome_manager.clear_session_datadome(session)
+                return 'NETWORK_RETRY'
 
             if v1 == 'NO_ACCOUNT':
                 live_stats.update_stats(valid=False)
@@ -4715,6 +4719,19 @@ def bulk_check(bulk_mode: str = 'full'):
                         proxy_line = proxy_manager._index
                         dashboard.set_current_proxy(proxy=proxy_url, line=proxy_line)
                 time.sleep(0.5)
+                continue
+            if status == 'NETWORK_RETRY':
+                # Pure TCP/TLS failure — not an IP block, not a verdict.
+                # Rebuild the thread-local session + datadome and retry
+                # the same account silently. No feed row, no counter.
+                if hasattr(_thread_local, 'session'):
+                    try:
+                        _thread_local.session.close()
+                    except Exception:
+                        pass
+                    del _thread_local.session
+                if hasattr(_thread_local, 'datadome'):
+                    del _thread_local.datadome
                 continue
             break
         result_info = live_stats.pop_result()
