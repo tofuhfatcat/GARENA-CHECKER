@@ -1079,7 +1079,7 @@ class BulkLiveDashboard:
         thr_val     = f'{threads}/{max_thr}'
 
         _tw = shutil.get_terminal_size((84, 24)).columns
-        W   = max(min(_tw - 2, 120), 60)
+        W   = max(_tw - 2, 60)
         V   = BulkLiveDashboard._vlen
         H   = '─'
         HH  = '━'
@@ -2976,14 +2976,11 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     datadome_manager.clear_session_datadome(session)
                     return 'IP_CHANGED'
                 else:
-                    # IP never changed — this is rate-limiting, not a dead account.
-                    # Defer to the back of the queue so the throttle has time to
-                    live_stats.update_stats(is_error=True)
-                    account_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'IP Change Timeout'}
-                    results_manager.add_account(account_data)
-                    if auto_remove:
-                        _queue_auto_remove(account, password, file_manager, combo_file_path)
-                    return 'ERROR'
+                    # IP never changed — rate-limiting, not an account verdict.
+                    # Silently return IP_BLOCKED so _wrapped_worker can skip it
+                    # without pushing noise into the feed; account stays in the
+                    # combo file for a re-run.
+                    return 'IP_BLOCKED'
 
             if v1 == 'NETWORK_ERROR':
                 # Silent retry. Rebuild the session (dead keep-alive / stale socket
@@ -4689,11 +4686,18 @@ def bulk_check(bulk_mode: str = 'full'):
         ip_change_tries = 0
         while True:
             status, acc_name, _ = _worker(account_line)
+            if status == 'IP_BLOCKED':
+                # Silently skip — don't add to feed, don't count as error.
+                # Account stays in combo file for a re-run.
+                with stats_lock:
+                    overall_done += 1
+                return
             if status == 'IP_CHANGED':
                 ip_change_tries += 1
-                # Safety cap so a stuck IP can't spin forever.
+                # Safety cap so a stuck IP can't spin forever — same silent skip.
                 if ip_change_tries > 3:
-                    _record_error('IP Blocked')
+                    with stats_lock:
+                        overall_done += 1
                     return
                 if hasattr(_thread_local, 'session'):
                     try:
