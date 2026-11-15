@@ -904,7 +904,20 @@ class BulkLiveDashboard:
         """Re-render dashboard in-place.  Call under _dash_print_lock."""
         # Detect terminal resize — if width changed, the old lines may have
         # wrapped and our cursor-up count won't erase them. Full-clear then.
-        cur_tw = shutil.get_terminal_size((84, 24)).columns
+        # Use the same robust probe as render() so resize detection sees the
+        # real width even when colorama wraps stdout.
+        _cands = [shutil.get_terminal_size((0, 0)).columns]
+        import sys as _sys
+        for _src in (_sys.__stdout__, _sys.__stderr__, _sys.stdout, _sys.stderr):
+            try:
+                _cands.append(os.get_terminal_size(_src.fileno()).columns)
+            except Exception:
+                pass
+        try:
+            _cands.append(console.size.width)
+        except Exception:
+            pass
+        cur_tw = max((c for c in _cands if c and c > 0), default=84)
         if cur_tw != self._last_tw:
             _raw_write('\x1b[H\x1b[2J')
             self._dash_lines = 0
@@ -1039,7 +1052,28 @@ class BulkLiveDashboard:
         clock       = time.strftime('%H:%M:%S')
         thr_val     = f'{threads}/{max_thr}'
 
-        _tw = shutil.get_terminal_size((84, 24)).columns
+        # Robust terminal width detection — shutil.get_terminal_size can return
+        # a stale COLUMNS env var or the (84, 24) fallback when stdout is wrapped
+        # by colorama. Probe every fd (stdin, stdout, stderr, the raw __stdout__
+        # under the wrapper) and take the max, so a resized or wide terminal
+        # actually reaches the dashboard.
+        def _probe_width():
+            import sys as _sys
+            candidates = [shutil.get_terminal_size((0, 0)).columns]
+            for src in (_sys.__stdout__, _sys.__stderr__, _sys.stdout, _sys.stderr):
+                try:
+                    fd = src.fileno()
+                    candidates.append(os.get_terminal_size(fd).columns)
+                except Exception:
+                    pass
+            # Rich's own detector is often the most accurate on wrapped streams
+            try:
+                candidates.append(console.size.width)
+            except Exception:
+                pass
+            w = max((c for c in candidates if c and c > 0), default=84)
+            return w
+        _tw = _probe_width()
         W   = max(_tw - 2, 60)
         V   = BulkLiveDashboard._vlen
         H   = '─'
