@@ -878,8 +878,10 @@ class BulkLiveDashboard:
                 self.invalid += 1
                 reason = error_reason[:20] if error_reason else "Account Doesn't E..."
                 self._feed.append((self._feed_counter, account.split(':')[0][:20], False, reason, 0))
-            if len(self._feed) > 10:
-                self._feed = self._feed[-10:]
+            # Keep a bigger rolling buffer than any plausible terminal height so
+            # render() can slice to fit without ever starving the live feed.
+            if len(self._feed) > 200:
+                self._feed = self._feed[-200:]
             self._build_snap()
         self._on_result(account, success, is_clean, has_codm, codm_level, shell_balance, error_reason)
 
@@ -1265,7 +1267,27 @@ class BulkLiveDashboard:
             if len(s) > w:
                 return s[:w-1] + '…'
             return s.ljust(w)
-        for entry in feed[-10:]:
+        # Dynamic feed height — grow with the terminal. Fixed overhead for the
+        # non-feed chrome (title, stat box, progress, ACCOUNT RESULTS/SYSTEM
+        # block, LEVELS & PEAKS / TOP HITS block on the left, borders, bottom
+        # bar) is about 26 rows. Use max(10, term_h - 26) so a tall terminal
+        # fills; small terminals keep the old 10-row floor.
+        def _probe_height():
+            import sys as _sys
+            cands = [shutil.get_terminal_size((0, 0)).lines]
+            for src in (_sys.__stdout__, _sys.__stderr__, _sys.stdout, _sys.stderr):
+                try:
+                    cands.append(os.get_terminal_size(src.fileno()).lines)
+                except Exception:
+                    pass
+            try:
+                cands.append(console.size.height)
+            except Exception:
+                pass
+            return max((c for c in cands if c and c > 0), default=24)
+        _th = _probe_height()
+        _feed_cap = max(10, _th - 26)
+        for entry in feed[-_feed_cap:]:
             num, acct, ok, reason = entry[0], entry[1], entry[2], entry[3]
             lvl = entry[4] if len(entry) > 4 else 0
             lvl_tag = f'{CY}Lv{lvl}{RST} ' if lvl else ''
