@@ -4543,14 +4543,37 @@ def bulk_check(bulk_mode: str = 'full'):
             _thread_local.datadome = DataDomeManager()
             _thread_local.proxy_url = None
             _thread_local.proxy_line = None
-            if using_proxy and proxy_manager and proxy_manager.enabled:
+
+            # --- PROXY LOGIC --- (mirrors christmas.py)
+            # Prefer module-level GLOBAL_PROXIES (auto-loaded from
+            # proxies_2.txt at startup) with random-pick per thread, then
+            # fall back to proxy_manager from prompt_proxy_setup. Without
+            # this branch every thread went direct whenever proxies_2.txt
+            # existed but the user hadn't re-selected it at the prompt —
+            # which is how an "ownsrc with proxies" run was producing 100%
+            # invalid against the same combo christmas was finding valid on.
+            if 'GLOBAL_PROXIES' in globals() and GLOBAL_PROXIES:
+                proxy_string = random.choice(GLOBAL_PROXIES)
+                proxy = {'http': proxy_string, 'https': proxy_string}
+                _thread_local.session.proxies.update(proxy)
+                _thread_local.proxy_url = proxy_string
+                _thread_local.proxy_line = 1
+                try:
+                    dashboard.set_current_proxy(proxy=_thread_local.proxy_url, line=_thread_local.proxy_line)
+                except Exception:
+                    pass
+            elif using_proxy and proxy_manager and proxy_manager.enabled:
                 proxy = proxy_manager.get_next()
                 if proxy:
                     _thread_local.session.proxies.update(proxy)
                     _thread_local.proxy_url = proxy.get('http') or proxy.get('https')
                     _thread_local.proxy_line = proxy_manager._index
-                    dashboard.set_current_proxy(proxy=_thread_local.proxy_url, line=_thread_local.proxy_line)
-            proxy_dict = dict(_thread_local.session.proxies) if using_proxy and proxy_manager and proxy_manager.enabled else None
+                    try:
+                        dashboard.set_current_proxy(proxy=_thread_local.proxy_url, line=_thread_local.proxy_line)
+                    except Exception:
+                        pass
+            # -------------------
+            proxy_dict = dict(_thread_local.session.proxies) if _thread_local.session.proxies else None
             picked_ck = cookie_manager.pick_cookie()
             if picked_ck:
                 applyck(_thread_local.session, picked_ck)
